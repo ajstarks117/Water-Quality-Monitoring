@@ -75,3 +75,27 @@ def test_tc_0_2_03_package_imports_resolve(subpackage):
     """TC-0.2-03: Verify that all src/ subpackages can be imported cleanly."""
     module = importlib.import_module(subpackage)
     assert module is not None, f"Failed to import subpackage: {subpackage}"
+
+
+def test_tc_0_3_02_workflow_docs_exist():
+    """TC-0.3-02: Verify CONTRIBUTING.md and Docs/interface_contracts.md exist with required sections."""
+    repo_root = Path(__file__).resolve().parent.parent
+    contributing_path = repo_root / "CONTRIBUTING.md"
+    contracts_path = repo_root / "Docs" / "interface_contracts.md"
+
+    assert contributing_path.exists(), "CONTRIBUTING.md missing"
+    assert contracts_path.exists(), "Docs/interface_contracts.md missing"
+
+    contributing_content = contributing_path.read_text(encoding="utf-8")
+    assert "feature/data-pipeline" in contributing_content
+    assert "feature/ml-models" in contributing_content
+    assert "feature/explainability-decision-support" in contributing_content
+    assert "feature/dashboard" in contributing_content
+    assert "2 hours" in contributing_content
+
+    contracts_content = contracts_path.read_text(encoding="utf-8")
+    assert "Cleaned Data Contract" in contracts_content
+    assert "Model Artifact Contract" in contracts_content
+    assert "Potability" in contracts_content
+    assert "best_model.pkl" in contracts_content
+
