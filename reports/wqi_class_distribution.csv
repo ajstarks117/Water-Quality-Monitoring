@@ -1,0 +1,6 @@
+wqi_class,cpcb_category,wqi_range,count,percentage,binary_potability
+Excellent,Class A,0 - 25,7,0.21,1
+Good,Class B,26 - 50,110,3.35,1
+Poor,Class C,51 - 75,455,13.84,0
+Very Poor,Class D,76 - 100,919,27.96,0
+Unsuitable,Class E,> 100,1796,54.64,0
