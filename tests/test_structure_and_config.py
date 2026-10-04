@@ -99,3 +99,36 @@ def test_tc_0_3_02_workflow_docs_exist():
     assert "Potability" in contracts_content
     assert "best_model.pkl" in contracts_content
 
+
+def test_tc_1_1_01_wqi_standard_citations_and_parameters():
+    """TC-1.1-01, TC-1.1-02, TC-1.1-03: Verify WQI standard formula, CPCB parameter mapping, units, and class cutoffs."""
+    repo_root = Path(__file__).resolve().parent.parent
+    wqi_doc_path = repo_root / "Docs" / "wqi_standard.md"
+
+    assert wqi_doc_path.exists(), "Docs/wqi_standard.md missing"
+
+    content = wqi_doc_path.read_text(encoding="utf-8")
+
+    # Citations check
+    assert "Central Pollution Control Board" in content or "CPCB" in content
+    assert "IS 10500:2012" in content
+    assert "Brown" in content or "Weighted Arithmetic" in content
+
+    # Parameter & Unit mapping check
+    required_params = ["pH", "Dissolved Oxygen", "BOD", "Conductivity", "Turbidity"]
+    for param in required_params:
+        assert param in content, f"Missing parameter definition for: {param}"
+
+    # Units check
+    assert "mg/L" in content
+    assert "NTU" in content
+    assert "MPN/100" in content
+
+    # Class cutoffs check
+    assert "Excellent" in content
+    assert "Good" in content
+    assert "Poor" in content
+    assert "50.0" in content or "50" in content
+    assert "Potability" in content
+
+
