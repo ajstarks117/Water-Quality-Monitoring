@@ -1,101 +1,123 @@
-"""Test Suite for CPCB Dataset Ingestion and Multi-Granularity Join (Milestone 1.2)."""
+"""Test Suite for CPCB Dataset Ingestion and Multi-Granularity Join Engine (Milestone 1.2)."""
 from pathlib import Path
 import pandas as pd
 import pytest
 
 from src.data.join_cpcb import (
-    generate_cpcb_raw_data,
     load_and_join_cpcb_datasets,
+    validate_raw_cpcb_files,
     JoinAccounting,
 )
 
 
-@pytest.fixture(scope="module")
-def prepared_cpcb_datasets(tmp_path_factory):
-    """Generate and join CPCB raw datasets for testing."""
-    raw_dir = tmp_path_factory.mktemp("raw")
-    interim_dir = tmp_path_factory.mktemp("interim")
-    interim_output_path = interim_dir / "cpcb_joined.csv"
+def test_validate_raw_cpcb_files_raises_on_missing(tmp_path):
+    """Verify that validate_raw_cpcb_files raises FileNotFoundError when raw files are missing."""
+    with pytest.raises(FileNotFoundError, match="Official CPCB raw datasets not found"):
+        validate_raw_cpcb_files(
+            physical_path=tmp_path / "nonexistent_physical.csv",
+            biological_path=tmp_path / "nonexistent_biological.csv",
+            chemical_path=tmp_path / "nonexistent_chemical.csv",
+        )
 
-    paths = generate_cpcb_raw_data(output_dir=raw_dir, states=["Maharashtra", "Uttar Pradesh"], seed=42)
 
-    df_joined, accounting = load_and_join_cpcb_datasets(
-        physical_path=paths["physical"],
-        biological_path=paths["biological"],
-        chemical_path=paths["chemical"],
-        output_interim_path=interim_output_path,
-    )
+@pytest.fixture
+def mock_unit_test_tables(tmp_path):
+    """Create minimal synthetic tables strictly for verifying join algorithm logic."""
+    phys_path = tmp_path / "test_phys.csv"
+    bio_path = tmp_path / "test_bio.csv"
+    chem_path = tmp_path / "test_chem.csv"
+    out_path = tmp_path / "test_joined.csv"
+
+    # 2 stations, 2 years (2022, 2023), 12 months each = 48 monthly rows
+    phys_rows = []
+    bio_rows = []
+    for stn in ["STN_A", "STN_B"]:
+        for yr in [2022, 2023]:
+            for mo in range(1, 13):
+                phys_rows.append({
+                    "station_id": stn,
+                    "station_name": f"{stn} River Point",
+                    "state": "Maharashtra",
+                    "year": yr,
+                    "month": mo,
+                    "ph": 7.5,
+                    "electrical_conductivity_us_cm": 350.0,
+                })
+                bio_rows.append({
+                    "station_id": stn,
+                    "year": yr,
+                    "month": mo,
+                    "dissolved_oxygen_mg_l": 6.8,
+                    "bod_mg_l": 2.1,
+                })
+
+    # Chemical annual records: STN_B in 2023 is omitted to test missing chemical fallback
+    chem_rows = [
+        {"station_id": "STN_A", "year": 2022, "nitrate_mg_l": 12.0, "total_hardness_mg_l": 150.0},
+        {"station_id": "STN_A", "year": 2023, "nitrate_mg_l": 14.5, "total_hardness_mg_l": 160.0},
+        {"station_id": "STN_B", "year": 2022, "nitrate_mg_l": 8.0, "total_hardness_mg_l": 110.0},
+    ]
+
+    pd.DataFrame(phys_rows).to_csv(phys_path, index=False)
+    pd.DataFrame(bio_rows).to_csv(bio_path, index=False)
+    pd.DataFrame(chem_rows).to_csv(chem_path, index=False)
 
     return {
-        "paths": paths,
-        "df_joined": df_joined,
-        "accounting": accounting,
-        "interim_output_path": interim_output_path,
+        "phys": phys_path,
+        "bio": bio_path,
+        "chem": chem_path,
+        "out": out_path,
     }
 
 
-def test_tc_1_2_01_all_three_source_files_load(prepared_cpcb_datasets):
-    """TC-1.2-01: Verify all three raw CPCB files load with no parse errors."""
-    paths = prepared_cpcb_datasets["paths"]
+def test_tc_1_2_join_algorithm_and_accounting(mock_unit_test_tables):
+    """TC-1.2-01 & TC-1.2-02: Verify join algorithm, row accounting, and column preservation."""
+    paths = mock_unit_test_tables
 
-    df_phys = pd.read_csv(paths["physical"])
-    df_bio = pd.read_csv(paths["biological"])
-    df_chem = pd.read_csv(paths["chemical"])
+    df_joined, accounting = load_and_join_cpcb_datasets(
+        physical_path=paths["phys"],
+        biological_path=paths["bio"],
+        chemical_path=paths["chem"],
+        output_interim_path=paths["out"],
+    )
 
-    assert len(df_phys) > 0, "Physical dataset is empty"
-    assert len(df_bio) > 0, "Biological dataset is empty"
-    assert len(df_chem) > 0, "Chemical dataset is empty"
-
-    assert "ph" in df_phys.columns
-    assert "dissolved_oxygen_mg_l" in df_bio.columns
-    assert "nitrate_mg_l" in df_chem.columns
-
-
-def test_tc_1_2_02_join_produces_documented_row_count(prepared_cpcb_datasets):
-    """TC-1.2-02: Verify join produces exact documented row count with no unexplained row loss."""
-    accounting: JoinAccounting = prepared_cpcb_datasets["accounting"]
-    df_joined: pd.DataFrame = prepared_cpcb_datasets["df_joined"]
-
-    assert accounting.physical_rows == 864, f"Expected 864 physical rows, got {accounting.physical_rows}"
-    assert accounting.biological_rows == 864, f"Expected 864 biological rows, got {accounting.biological_rows}"
-    assert accounting.phys_bio_merged_rows == 864, "Row loss during monthly physical+biological merge"
-    assert len(df_joined) == 864, f"Expected 864 joined rows, got {len(df_joined)}"
-    assert accounting.unique_stations == 18, f"Expected 18 stations, got {accounting.unique_stations}"
+    assert accounting.physical_rows == 48
+    assert accounting.biological_rows == 48
+    assert accounting.chemical_rows == 3
+    assert accounting.phys_bio_merged_rows == 48
+    assert len(df_joined) == 48
+    assert paths["out"].exists()
 
 
-def test_tc_1_2_03_chemical_broadcast_strategy_applied_consistently(prepared_cpcb_datasets):
-    """TC-1.2-03: Spot-check stations to confirm chemical parameters are consistently broadcast across all 12 months."""
-    df_joined: pd.DataFrame = prepared_cpcb_datasets["df_joined"]
+def test_tc_1_2_chemical_broadcasting(mock_unit_test_tables):
+    """TC-1.2-03: Verify annual chemical values are broadcast to all 12 monthly rows."""
+    paths = mock_unit_test_tables
 
-    spot_check_stations = ["MAH_STN_001", "MAH_STN_003", "UP_STN_002", "UP_STN_004", "UP_STN_007"]
+    df_joined, _ = load_and_join_cpcb_datasets(
+        physical_path=paths["phys"],
+        biological_path=paths["bio"],
+        chemical_path=paths["chem"],
+    )
 
-    for stn_id in spot_check_stations:
-        for year in [2021, 2022, 2024]:
-            stn_year_df = df_joined[(df_joined["station_id"] == stn_id) & (df_joined["year"] == year)]
-            assert len(stn_year_df) == 12, f"Station {stn_id} year {year} must have 12 monthly observations"
-
-            # Check that broadcast chemical fields have zero variance across the 12 months
-            for chem_col in ["nitrate_mg_l", "total_hardness_mg_l", "chloride_mg_l", "sulfate_mg_l"]:
-                unique_vals = stn_year_df[chem_col].dropna().unique()
-                assert len(unique_vals) == 1, (
-                    f"Inconsistent broadcast for {stn_id} year {year} on {chem_col}: {unique_vals}"
-                )
+    stn_a_2022 = df_joined[(df_joined["station_id"] == "STN_A") & (df_joined["year"] == 2022)]
+    assert len(stn_a_2022) == 12
+    assert (stn_a_2022["nitrate_mg_l"] == 12.0).all()
+    assert (stn_a_2022["total_hardness_mg_l"] == 150.0).all()
+    assert (stn_a_2022["has_chemical_record"] == True).all()
 
 
-def test_tc_1_2_04_negative_station_with_no_chemical_match(prepared_cpcb_datasets):
-    """TC-1.2-04: Verify station with missing chemical record is explicitly flagged and preserved with NaN, not zero-filled."""
-    df_joined: pd.DataFrame = prepared_cpcb_datasets["df_joined"]
+def test_tc_1_2_missing_chemical_handling(mock_unit_test_tables):
+    """TC-1.2-04: Verify missing chemical record is flagged and preserved with NaN."""
+    paths = mock_unit_test_tables
 
-    # UP_STN_009 in 2023 was intentionally left without an annual chemical record
-    missing_chem_df = df_joined[(df_joined["station_id"] == "UP_STN_009") & (df_joined["year"] == 2023)]
+    df_joined, _ = load_and_join_cpcb_datasets(
+        physical_path=paths["phys"],
+        biological_path=paths["bio"],
+        chemical_path=paths["chem"],
+    )
 
-    assert len(missing_chem_df) == 12, "Unmatched chemical rows should not be dropped"
-    assert (missing_chem_df["has_chemical_record"] == False).all(), "has_chemical_record flag must be False"
-
-    # Ensure chemical columns are NaN rather than silently zeroed
-    assert missing_chem_df["nitrate_mg_l"].isna().all(), "Missing chemical values should be NaN"
-    assert missing_chem_df["total_hardness_mg_l"].isna().all(), "Missing chemical values should be NaN"
-
-    # Physical and biological values must still be intact
-    assert missing_chem_df["ph"].notna().all(), "Physical parameters must remain valid"
-    assert missing_chem_df["dissolved_oxygen_mg_l"].notna().all(), "Biological parameters must remain valid"
+    stn_b_2023 = df_joined[(df_joined["station_id"] == "STN_B") & (df_joined["year"] == 2023)]
+    assert len(stn_b_2023) == 12
+    assert (stn_b_2023["has_chemical_record"] == False).all()
+    assert stn_b_2023["nitrate_mg_l"].isna().all()
+    assert (stn_b_2023["ph"] == 7.5).all()
