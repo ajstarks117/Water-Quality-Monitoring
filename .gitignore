@@ -1,0 +1,66 @@
+# Python virtual environments
+venv/
+.venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Jupyter Notebook checkpoints & personal scratch work
+.ipynb_checkpoints/
+scratch_*
+scratch/
+
+# Environment variables & secrets
+.env
+.env.local
+.env.*
+!.env.example
+
+# Raw and interim data files (preserve folder structure via .gitkeep)
+data/raw/*
+!data/raw/.gitkeep
+!data/raw/README.md
+data/interim/*
+!data/interim/.gitkeep
+data/processed/*
+!data/processed/.gitkeep
+
+# Model binaries & checkpoints (allow-list only frozen final model)
+models/*
+!models/.gitkeep
+!models/best_model.pkl
+*.pkl
+*.joblib
+!models/best_model.pkl
+
+# Reports & local artifacts
+reports/artifacts/*
+!reports/artifacts/.gitkeep
+
+# Testing & coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Node / Frontend tooling
+node_modules/
+dist/
+build/
+
+# Operating System files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE & Editor specific files
+.vscode/
+.idea/
+*.swp
+*.swo
