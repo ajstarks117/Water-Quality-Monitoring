@@ -1,0 +1,15 @@
+# Water Quality Monitoring Central Configuration
+# Project: Water Potability Prediction & Quality Monitoring
+
+# Data configuration
+dataset_path: "data/raw/water_potability.csv"
+target_column: "Potability"
+feature_columns: []  # Populated during Phase 1 feature engineering
+
+# Split and seed parameters (single source of truth for reproducibility)
+random_seed: 42
+test_size: 0.2
+
+# Model and artifact output paths
+model_output_path: "models/best_model.pkl"
+shap_output_path: "reports/figures/shap_summary.png"
