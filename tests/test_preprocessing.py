@@ -18,7 +18,10 @@ from src.data.load_data import load_raw_data, load_config
 from src.data.preprocessing import (
     handle_duplicates,
     handle_missing_values,
+    handle_outliers,
     PreprocessingState,
+    OutlierAuditReport,
+    PHYSICAL_BOUNDS,
 )
 
 
@@ -179,3 +182,77 @@ def test_protected_columns_not_dropped():
     assert "wqi_class" in df_clean.columns
     assert "sparse_unprotected" not in df_clean.columns
     assert "sparse_unprotected" in state.dropped_columns
+
+
+# ---------------------------------------------------------------------------
+# TC-2.2-01: Physically Impossible Values Removed
+# ---------------------------------------------------------------------------
+def test_tc_2_2_01_physically_impossible_values_removed(candidate_features: list, caplog):
+    """TC-2.2-01: Synthetic row with pH = 15.0 or negative concentration is removed as invalid error."""
+    df_with_invalid = pd.DataFrame({
+        "Potential of Hydrogen (pH)": [7.0, 15.0, 7.5, 6.8],  # 15.0 is physically impossible (>14)
+        "Dissolved oxygen (mg/L)": [6.5, 5.8, -1.0, 7.2],      # -1.0 is physically impossible (<0)
+        "Biochemical Oxygen Demand (mg/L)": [2.0, 3.5, 4.0, 1.8],
+        "Fecal Coliform (MPN/100mL)": [50.0, 100.0, 25.0, 80.0],
+        "wqi_class": ["Good", "Poor", "Very Poor", "Good"],
+        "Potability": [1, 0, 0, 1],
+    })
+
+    with caplog.at_level(logging.WARNING, logger="preprocessing"):
+        df_clean, report = handle_outliers(df_with_invalid, remove_invalid=True)
+
+    # Both row 1 (pH=15) and row 2 (DO=-1) must be removed
+    assert report.invalid_rows_removed == 2
+    assert len(df_clean) == 2
+    assert "INVALID PHYSICAL READINGS" in caplog.text
+
+
+# ---------------------------------------------------------------------------
+# TC-2.2-02: Genuine Extreme Readings Retained
+# ---------------------------------------------------------------------------
+def test_tc_2_2_02_genuine_extreme_values_retained(labeled_df: pd.DataFrame):
+    """TC-2.2-02: High-but-plausible BOD and extreme Fecal Coliform values are retained as genuine signals."""
+    df_clean, report = handle_outliers(labeled_df, remove_invalid=True)
+
+    # In official data, 100% of samples are within physical bounds
+    assert report.invalid_rows_removed == 0
+    assert len(df_clean) == len(labeled_df)
+
+    # Max BOD (127.0 mg/L) and Max FC (2.2e7 MPN/100mL) must be retained
+    assert df_clean["Biochemical Oxygen Demand (mg/L)"].max() == 127.0
+    assert df_clean["Fecal Coliform (MPN/100mL)"].max() == 22000000.0
+    assert report.statistical_outliers_by_feature["Biochemical Oxygen Demand (mg/L)"] > 0
+    assert report.statistical_outliers_by_feature["Fecal Coliform (MPN/100mL)"] > 0
+
+
+# ---------------------------------------------------------------------------
+# TC-2.2-03: Class Balance Check Post-Outlier-Handling
+# ---------------------------------------------------------------------------
+def test_tc_2_2_03_class_balance_check_post_outliers(labeled_df: pd.DataFrame):
+    """TC-2.2-03: Compare class distribution before and after handle_outliers; ensure no disproportionate loss."""
+    df_clean, report = handle_outliers(labeled_df, rules_config={"max_allowed_class_loss_pct": 10.0})
+
+    assert report.is_class_imbalance_severely_distorted is False
+    for cls, loss_pct in report.class_loss_percentages.items():
+        assert loss_pct == 0.0, f"Class '{cls}' suffered unexpected row loss: {loss_pct}%"
+
+
+def test_boxplots_artifacts_exist():
+    """Verify that outlier box plot figures were generated in reports/figures/outlier_boxplots/."""
+    from src.data.load_data import get_project_root
+
+    boxplots_dir = get_project_root() / "reports" / "figures" / "outlier_boxplots"
+    assert boxplots_dir.exists(), "Boxplots directory missing"
+
+    expected_files = [
+        "candidate_features_boxplots.png",
+        "potential_of_hydrogen_by_class_boxplot.png",
+        "dissolved_oxygen_by_class_boxplot.png",
+        "biochemical_oxygen_demand_by_class_boxplot.png",
+        "fecal_coliform_by_class_boxplot.png",
+    ]
+
+    for fname in expected_files:
+        p = boxplots_dir / fname
+        assert p.exists(), f"Missing boxplot figure: {fname}"
+        assert p.stat().st_size > 1000, f"Boxplot figure '{fname}' appears empty"

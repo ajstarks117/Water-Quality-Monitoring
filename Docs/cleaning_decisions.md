@@ -97,3 +97,39 @@ Tier 3: Sparse / Supplementary Parameters (86.9% - 100%) ─── 42 columns (H
 | Metadata Columns (24 cols) | 0.00% | Retain for grouping / filter | Required for spatial analysis and map visualization. |
 | `wqi_score` | 0.00% | **Strictly Exclude** | Target derivation intermediate; ML leakage guard. |
 | `wqi_class`, `Potability` | 0.00% | Retain as Targets | Ground-truth multi-class & binary targets. |
+
+---
+
+## 6. Outlier Investigation & Domain Validity Decisions (Milestone 2.2)
+
+### 6.1 Statistical Outlier Metrics vs Physical Plausibility
+
+Every numeric parameter was evaluated using Interquartile Range ($1.5 \times \text{IQR}$, $3.0 \times \text{IQR}$) and standard deviation ($|z| > 3.0$):
+
+| Parameter | Domain Plausible Range | Observed Range | IQR Outliers Count (%) | Extreme IQR (> 3.0 IQR) | $|z| > 3.0$ Count (%) | Decision & Rationale |
+|:---|:---|:---|---:|---:|---:|:---|
+| `Potential of Hydrogen (pH)` | $[0.0, 14.0]$ | $[3.45, 9.20]$ | 16 (0.49%) | 0 (0.00%) | 12 (0.37%) | **RETAIN ALL**: 100% within $[0, 14]$. Real acidic/alkaline stream occurrences. |
+| `Dissolved oxygen (mg/L)` | $[0.0, 30.0]$ | $[0.30, 28.00]$ | 161 (5.04%) | 1 (0.03%) | 3 (0.09%) | **RETAIN ALL**: 100% within $[0, 30]$. High DO ($>14$) reflects cold/algal supersaturation. |
+| `Biochemical Oxygen Demand (mg/L)` | $[0.0, 500.0]$ | $[1.10, 127.00]$ | 234 (7.53%) | 151 (4.86%) | 101 (3.25%) | **RETAIN ALL**: High BOD ($>20\text{ mg/L}$) indicates severe raw sewage/industrial contamination. Deleting would remove critical pollution signals. |
+| `Fecal Coliform (MPN/100mL)` | $[0.0, 10^8]$ | $[2.0, 2.2 \times 10^7]$ | 578 (19.14%) | 530 (17.55%) | 19 (0.63%) | **RETAIN ALL**: Extreme bacterial counts ($10^5 - 10^7$) are authentic untreated urban drain signals in Class E rivers. |
+
+### 6.2 Distinction: Measurement Error vs Genuine Environmental Extremes
+- **Category A: Physically Impossible Values (Measurement Errors)**:
+  - Definition: Values outside physical reality ($\text{pH} < 0.0$ or $\text{pH} > 14.0$, $\text{DO} < 0.0$, $\text{BOD} < 0.0$, $\text{FC} < 0.0$).
+  - Policy: Automatically detected and filtered in `handle_outliers(df, remove_invalid=True)`.
+  - Observed in official dataset: **0 records** (100% of recorded values are physically possible).
+- **Category B: Genuine Environmental Extreme Events**:
+  - Definition: Statistically high readings that reflect real acute pollution events (effluent discharge, seasonal low-flow hypoxia, microbial surges).
+  - Policy: **Kept without deletion or arbitrary capping**.
+
+### 6.3 Class Balance Impact Verification
+- Because all 3,287 records in `data/interim/cpcb_labeled.csv` are physically valid, running `handle_outliers()` retains $100\%$ of observations across all 5 classes (`Excellent`: 7, `Good`: 110, `Poor`: 455, `Very Poor`: 919, `Unsuitable`: 1,796).
+- Class loss percentage across all classes is **0.00%**.
+
+### 6.4 Visual Audit Artifacts
+Box plots visualizing distributions and class-stratified distributions are saved in:
+- `reports/figures/outlier_boxplots/candidate_features_boxplots.png`
+- `reports/figures/outlier_boxplots/potential_of_hydrogen_by_class_boxplot.png`
+- `reports/figures/outlier_boxplots/dissolved_oxygen_by_class_boxplot.png`
+- `reports/figures/outlier_boxplots/biochemical_oxygen_demand_by_class_boxplot.png`
+- `reports/figures/outlier_boxplots/fecal_coliform_by_class_boxplot.png`

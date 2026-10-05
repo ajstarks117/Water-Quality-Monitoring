@@ -28,8 +28,32 @@ if not logger.handlers:
 
 
 # ---------------------------------------------------------------------------
-# Preprocessing State & Audit Structures
+# Domain Physical Plausibility Limits & Outlier Structures
 # ---------------------------------------------------------------------------
+# Physical / Chemical / Biological absolute plausibility limits
+PHYSICAL_BOUNDS: Dict[str, Tuple[float, float]] = {
+    "Potential of Hydrogen (pH)": (0.0, 14.0),
+    "Dissolved oxygen (mg/L)": (0.0, 30.0),
+    "Biochemical Oxygen Demand (mg/L)": (0.0, 500.0),
+    "Fecal Coliform (MPN/100mL)": (0.0, 1e8),
+}
+
+
+@dataclass
+class OutlierAuditReport:
+    """Audit summary of outlier investigation, physical validity checks, and class balance impact."""
+    initial_rows: int = 0
+    final_rows: int = 0
+    invalid_rows_removed: int = 0
+    invalid_records_by_feature: Dict[str, int] = field(default_factory=dict)
+    statistical_outliers_by_feature: Dict[str, int] = field(default_factory=dict)
+    class_distribution_before: Dict[str, int] = field(default_factory=dict)
+    class_distribution_after: Dict[str, int] = field(default_factory=dict)
+    class_loss_percentages: Dict[str, float] = field(default_factory=dict)
+    is_class_imbalance_severely_distorted: bool = False
+    retained_genuine_extremes: bool = True
+
+
 @dataclass
 class PreprocessingState:
     """Stores fitted parameters (e.g. medians, dropped columns) for test transform."""
@@ -224,6 +248,115 @@ def handle_missing_values(
     return df_out, state
 
 
+# ---------------------------------------------------------------------------
+# Outlier Investigation & Domain Validity Handling Engine
+# ---------------------------------------------------------------------------
+def handle_outliers(
+    df: pd.DataFrame,
+    rules_config: Optional[Dict[str, Any]] = None,
+    remove_invalid: bool = True,
+) -> Tuple[pd.DataFrame, OutlierAuditReport]:
+    """Investigate statistical outliers and filter physically impossible measurement errors.
+
+    Per `docs/cleaning_decisions.md` (DEC-CLEANING-PREPROC-2026-V1):
+        1. Physically Impossible Readings: Dropped as invalid errors (e.g. pH outside 0-14, negative BOD/DO/FC).
+        2. Genuine Extreme Events: Kept as real pollution signals (e.g. BOD = 127 mg/L, FC = 2.2e7 MPN/100mL).
+        3. Class Balance Integrity: Checks whether any class lost > max_allowed_loss_pct (default: 10%).
+
+    Args:
+        df: Input pandas DataFrame.
+        rules_config: Optional dictionary defining custom physical bounds or parameters.
+            - `physical_bounds`: Dict[str, Tuple[float, float]] mapping column to (min_valid, max_valid).
+            - `max_allowed_class_loss_pct`: Maximum tolerable class loss percentage before warning (default: 10.0).
+            - `target_column`: Target column to audit (default: 'wqi_class').
+        remove_invalid: Whether to drop physically impossible rows (default: True).
+
+    Returns:
+        Tuple[pd.DataFrame, OutlierAuditReport]: (Cleaned DataFrame, OutlierAuditReport)
+    """
+    cfg = rules_config or {}
+    bounds_dict = cfg.get("physical_bounds", PHYSICAL_BOUNDS)
+    target_col = cfg.get("target_column", "wqi_class")
+    max_loss_pct = float(cfg.get("max_allowed_class_loss_pct", 10.0))
+
+    initial_rows = len(df)
+    report = OutlierAuditReport(initial_rows=initial_rows)
+
+    if target_col in df.columns:
+        report.class_distribution_before = df[target_col].value_counts().to_dict()
+
+    df_out = df.copy()
+    invalid_mask = pd.Series(False, index=df_out.index)
+
+    logger.info("================ OUTLIER & DOMAIN VALIDITY AUDIT ================")
+    logger.info("  Initial Rows Evaluated: %d", initial_rows)
+
+    # Statistical outlier computation and physical validity cross-check
+    for col, (min_valid, max_valid) in bounds_dict.items():
+        if col not in df_out.columns:
+            continue
+
+        s = df_out[col].dropna()
+        if len(s) == 0:
+            continue
+
+        # Statistical IQR & Z-score Outliers
+        q25, q75 = s.quantile(0.25), s.quantile(0.75)
+        iqr = q75 - q25
+        lower_iqr = q25 - 1.5 * iqr
+        upper_iqr = q75 + 1.5 * iqr
+        iqr_outliers_count = int(((s < lower_iqr) | (s > upper_iqr)).sum())
+        report.statistical_outliers_by_feature[col] = iqr_outliers_count
+
+        # Physical impossibility check (Domain Bounds)
+        col_invalid = (df_out[col] < min_valid) | (df_out[col] > max_valid)
+        invalid_count = int(col_invalid.sum())
+        report.invalid_records_by_feature[col] = invalid_count
+
+        if invalid_count > 0:
+            invalid_mask = invalid_mask | col_invalid
+            logger.warning(
+                "  INVALID PHYSICAL READINGS in '%s': %d rows outside domain bounds [%.1f, %.1f]",
+                col, invalid_count, min_valid, max_valid
+            )
+        else:
+            logger.info(
+                "  Feature '%s': 100%% physically valid (Domain: [%.1f, %.1f], Statistical IQR Outliers: %d - RETAINED)",
+                col, min_valid, max_valid, iqr_outliers_count
+            )
+
+    # Filter invalid rows if requested
+    invalid_total = int(invalid_mask.sum())
+    report.invalid_rows_removed = invalid_total
+
+    if remove_invalid and invalid_total > 0:
+        df_out = df_out[~invalid_mask].copy().reset_index(drop=True)
+        logger.info("  Removed %d physically impossible invalid rows. Remaining: %d rows", invalid_total, len(df_out))
+    else:
+        df_out = df_out.reset_index(drop=True)
+        logger.info("  No physically impossible rows detected. All genuine extreme pollution events retained.")
+
+    report.final_rows = len(df_out)
+
+    # Class balance impact check
+    if target_col in df_out.columns:
+        report.class_distribution_after = df_out[target_col].value_counts().to_dict()
+        for cls, count_before in report.class_distribution_before.items():
+            count_after = report.class_distribution_after.get(cls, 0)
+            loss_pct = ((count_before - count_after) / count_before) * 100 if count_before > 0 else 0.0
+            report.class_loss_percentages[cls] = round(loss_pct, 2)
+            if loss_pct > max_loss_pct:
+                report.is_class_imbalance_severely_distorted = True
+                logger.warning(
+                    "  CLASS BALANCE WARNING: Class '%s' lost %.2f%% of its rows (> threshold %.1f%%) during outlier filtering!",
+                    cls, loss_pct, max_loss_pct
+                )
+
+    logger.info("  Class Loss Breakdown: %s", report.class_loss_percentages)
+    logger.info("  Outlier Handling Status: COMPLETE (Genuine extreme signals preserved)")
+    return df_out, report
+
+
 def main():
     """CLI test execution for preprocessing module."""
     from src.data.load_data import load_raw_data
@@ -232,13 +365,16 @@ def main():
     raw_df = load_raw_data(validate=True)
     df_dedup = handle_duplicates(raw_df)
     df_clean, state = handle_missing_values(df_dedup)
+    df_final, outlier_report = handle_outliers(df_clean)
 
-    print(f"\n[Preprocessing Success]")
+    print(f"\n[Preprocessing & Outlier Pipeline Success]")
     print(f"  * Initial Shape: {state.initial_shape}")
     print(f"  * Final Cleaned Shape: {state.final_shape}")
     print(f"  * Columns Dropped (>40% missing): {len(state.dropped_columns)}")
     print(f"  * Imputation Values Used: {state.imputation_values}")
-    print(f"  * Imputed Counts: {state.imputed_counts}")
+    print(f"  * Statistical Outliers Kept: {outlier_report.statistical_outliers_by_feature}")
+    print(f"  * Invalid Rows Removed: {outlier_report.invalid_rows_removed}")
+    print(f"  * Final Rows: {outlier_report.final_rows}")
 
 
 if __name__ == "__main__":
