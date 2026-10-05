@@ -58,6 +58,7 @@ build/
 .DS_Store
 Thumbs.db
 desktop.ini
+~$*
 
 # IDE & Editor specific files
 .vscode/

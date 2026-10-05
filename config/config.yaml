@@ -1,10 +1,51 @@
 # Water Quality Monitoring Central Configuration
-# Project: Water Potability Prediction & Quality Monitoring
+# Project: CPCB Surface Water Quality Monitoring & WQI Classification
+# Milestone: M1.4 Frozen Interim Schema Contract
 
 # Data configuration
-dataset_path: "data/raw/water_potability.csv"
-target_column: "Potability"
-feature_columns: []  # Populated during Phase 1 feature engineering
+dataset_path: "data/interim/cpcb_labeled.csv"
+target_column: "wqi_class"
+secondary_target_column: "Potability"
+
+# Frozen candidate feature columns (M1.4 Schema Freeze)
+feature_columns:
+  - "Potential of Hydrogen (pH)"
+  - "Dissolved oxygen (mg/L)"
+  - "Biochemical Oxygen Demand (mg/L)"
+  - "Fecal Coliform (MPN/100mL)"
+
+# Explicitly excluded columns to prevent data leakage (TC-1.4-02)
+# wqi_score is the exact continuous value wqi_class and Potability were computed from.
+# It MUST NEVER appear in feature_columns or be used as an input feature in any ML model.
+excluded_leakage_columns:
+  - "wqi_score"
+
+# Excluded metadata & station identifier columns (spatial/administrative info)
+excluded_metadata_columns:
+  - "SlNo"
+  - "Station"
+  - "Agency"
+  - "State LGD Code"
+  - "State"
+  - "District LGD Code"
+  - "District"
+  - "Tehsil"
+  - "Block"
+  - "Village"
+  - "River"
+  - "Basin"
+  - "Tributary"
+  - "Subtributary"
+  - "SubSubtributary"
+  - "Local River"
+  - "Latitude"
+  - "Longitude"
+  - "Data Acquisition Time"
+  - "has_physical_record"
+  - "year"
+  - "month"
+  - "day"
+  - "sampling_date"
 
 # Split and seed parameters (single source of truth for reproducibility)
 random_seed: 42

@@ -1,35 +1,50 @@
 # Cross-Track Interface Contracts
 
-This document specifies the two hard interface contracts binding Track A (Data), Track B (ML), Track C (XAI/Decision Support), and Track D (Dashboard/Integration).
+**Document ID**: `CONTRACT-INTER-TRACK-2026-V2`  
+**Milestone**: Milestone 1.4 (Data Dictionary & Schema Freeze)  
+**Status**: **FROZEN**  
+**Last Updated**: 2026-10-05  
+
+This document specifies the two hard interface contracts binding **Track A (Data)**, **Track B (ML)**, **Track C (XAI/Decision Support)**, and **Track D (Dashboard/Integration)**.
 
 ---
 
 ## 1. Cleaned Data Contract
 
 - **Owner**: Track A (Data Pipeline)
-- **Freeze Milestone**: **M1.2** (Cleaned Data Pipeline & Schema Lock)
+- **Freeze Milestone**: **M1.4** (Data Dictionary & Schema Freeze)
 - **Consumer Tracks**: Track B (ML Models), Track C (Explainability), Track D (Dashboard)
-- **Location**: `data/processed/` (referenced via `config/config.yaml`)
+- **Location**: `data/interim/cpcb_labeled.csv` (and downstream `data/processed/train.csv`, `data/processed/test.csv`)
+- **Central Configuration**: `config/config.yaml` (`feature_columns`, `target_column`, `secondary_target_column`)
 
-### Schema Specification
-| Column Name | Data Type | Units / Range | Role |
-|---|---|---|---|
-| `ph` | `float64` | 0.0 - 14.0 | Feature |
-| `Hardness` | `float64` | mg/L (approx. 47 - 323) | Feature |
-| `Solids` | `float64` | ppm (approx. 320 - 61227) | Feature |
-| `Chloramines` | `float64` | ppm (approx. 0.35 - 13.1) | Feature |
-| `Sulfate` | `float64` | mg/L (approx. 129 - 481) | Feature |
-| `Conductivity` | `float64` | μS/cm (approx. 181 - 753) | Feature |
-| `Organic_carbon` | `float64` | ppm (approx. 2.2 - 28.3) | Feature |
-| `Trihalomethanes` | `float64` | μg/L (approx. 0.7 - 124.0) | Feature |
-| `Turbidity` | `float64` | NTU (approx. 1.4 - 6.7) | Feature |
-| `Potability` | `int64` | `0` (Not Potable), `1` (Potable) | **Target** |
+### Frozen Schema Specification (Candidate Feature Set & Targets)
+
+| Column Name | Data Type | Units | Plausible Range | Role | Description |
+|:---|:---|:---|:---|:---|:---|
+| `Potential of Hydrogen (pH)` | `float64` | pH scale ($0-14$) | $[0.0, 14.0]$ | **Candidate Feature** | Acidity/alkalinity balance. CPCB limit: $6.5 - 8.5$. |
+| `Dissolved oxygen (mg/L)` | `float64` | $\text{mg/L}$ | $[0.0, 30.0]$ | **Candidate Feature** | Dissolved oxygen concentration. CPCB limit: $\ge 5.0\text{ mg/L}$. |
+| `Biochemical Oxygen Demand (mg/L)` | `float64` | $\text{mg/L}$ | $[0.0, 200.0]$ | **Candidate Feature** | 3-day BOD at 27ºC. CPCB limit: $\le 3.0\text{ mg/L}$. |
+| `Fecal Coliform (MPN/100mL)` | `float64` | $\text{MPN/100mL}$ | $[0.0, 10^8]$ | **Candidate Feature** | Pathogenic bacterial indicator. CPCB limit: $\le 250\text{ MPN/100mL}$. |
+| `wqi_class` | `object` / `string` | Categorical Label | 5 Classes | **Primary Target** | Multi-class label: `Excellent`, `Good`, `Poor`, `Very Poor`, `Unsuitable`. |
+| `Potability` | `int64` | Binary Flag | `[0, 1]` | **Secondary Target** | Binary potability: `1` (Potable: Excellent/Good), `0` (Non-Potable). |
+
+### Mandatory Data Leakage Prevention Guard
+
+> [!CAUTION]
+> **STRICT TARGET LEAKAGE GUARD**:
+> `wqi_score` is the exact continuous mathematical number from which `wqi_class` and `Potability` were computed.
+> `wqi_score` **MUST NEVER** appear in `feature_columns` in `config/config.yaml` or in any feature matrix passed to ML models (`X_train`, `X_test`).
+> Including `wqi_score` would cause 100% artificial accuracy and total test leakage.
+
+### Excluded Metadata & High-Missingness Columns
+- **Administrative / Spatial Metadata (24 columns)**: `SlNo`, `Station`, `Agency`, `State LGD Code`, `State`, `District LGD Code`, `District`, `Tehsil`, `Block`, `Village`, `River`, `Basin`, `Tributary`, `Subtributary`, `SubSubtributary`, `Local River`, `Latitude`, `Longitude`, `Data Acquisition Time`, `has_physical_record`, `year`, `month`, `day`, `sampling_date`. (Retained for grouping, filtering, and dashboard map rendering).
+- **High-Missingness Parameters (40 columns)**: All parameters with $>85\%$ missingness are excluded from the baseline candidate feature set.
+- Complete 70-column enumeration is documented in [`Docs/data_dictionary.md`](file:///d:/Coding/College/Data%20science/CP/Docs/data_dictionary.md).
 
 ### Imputation & Preprocessing Guarantees
-- No `NaN`, `null`, or `inf` values in `data/processed/`.
-- Cleaned train/test split files: `data/processed/train.csv` and `data/processed/test.csv`.
-- Feature column ordering is preserved in `config/config.yaml` (`feature_columns`).
-- **Modification Rule**: Any schema change after M1.2 requires written consent in the team channel and updates to `config/config.yaml`.
+- Cleaned train/test split files: `data/processed/train.csv` and `data/processed/test.csv` (generated in Phase 2).
+- Candidate feature column ordering is strictly preserved in `config/config.yaml` (`feature_columns`).
+- **Modification Rule**: Any schema change after M1.4 requires an explicit exception in `#water-quality-core` and updates to `config/config.yaml`.
 
 ---
 
@@ -43,24 +58,24 @@ This document specifies the two hard interface contracts binding Track A (Data),
 ### Artifact Interface Guarantees
 The serialized object loaded via `joblib.load("models/best_model.pkl")` must be a scikit-learn compatible `Pipeline` or estimator exposing:
 
-1. **Binary Prediction**:
+1. **Multi-Class & Binary Prediction**:
    ```python
    y_pred = model.predict(X)
-   # Returns: np.ndarray of shape (n_samples,) with integer values in {0, 1}
+   # Returns: np.ndarray of shape (n_samples,) with class labels or binary integers
    ```
 2. **Probability Estimation**:
    ```python
    y_prob = model.predict_proba(X)
-   # Returns: np.ndarray of shape (n_samples, 2) where y_prob[:, 1] is P(Potable)
+   # Returns: np.ndarray of shape (n_samples, n_classes) with normalized probabilities
    ```
 3. **Input Format**:
-   - `X`: `pandas.DataFrame` or `numpy.ndarray` containing all 9 feature columns matching the exact names and dtypes defined in the Cleaned Data Contract.
-   - Built-in preprocessing: The pipeline must encapsulate any required scaling (e.g. `StandardScaler`) internally so raw user inputs can be passed directly to `.predict()`.
+   - `X`: `pandas.DataFrame` or `numpy.ndarray` containing candidate feature columns matching the exact names and dtypes defined in the Cleaned Data Contract.
+   - Built-in preprocessing: The pipeline must encapsulate any required scaling (e.g. `StandardScaler`) and imputation internally so raw inputs can be passed directly to `.predict()`.
 
 ---
 
 ## 3. Parallel Development & Mocking Strategy
 
-To prevent Tracks C and D from being blocked prior to M1.2 and M6.3:
-- **Mock Data**: Tracks B, C, and D can generate synthetic samples matching the schema above using `src/data/mock_data.py`.
-- **Mock Model**: Tracks C and D can use a dummy baseline model (e.g. `DummyClassifier(strategy="stratified")` or `LogisticRegression()`) serialized at `models/mock_model.pkl` until M6.3 is completed.
+To prevent Tracks C and D from being blocked:
+- **Interim Dataset Ready**: Tracks B, C, and D can directly consume `data/interim/cpcb_labeled.csv`.
+- **Mock Model**: Tracks C and D can use a baseline model (e.g. `RandomForestClassifier` or `LogisticRegression`) serialized at `models/mock_model.pkl` until M6.3 is completed.
