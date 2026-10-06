@@ -4,95 +4,103 @@
 **Deliverable**: Deliverable 2 (EDA Executive Summary Report)  
 **Milestone**: 3.2 (Parameter-vs-Class Analysis & EDA Report)  
 **Author**: Data Lead (Person A) & ML Lead (Person B)  
-**Dataset**: Central Pollution Control Board (CPCB) Surface Water Quality Monitoring Data (2021–2025)  
-**Sample Size**: 3,287 labeled observations across Maharashtra and Uttar Pradesh  
+**Dataset**: Central Pollution Control Board (CPCB) Surface Water Quality Monitoring Data  
+**Analyzed Scope**: 3,287 labeled observations across Maharashtra and Uttar Pradesh (2021 Sampling Records)  
+**Schema Baseline**: Frozen under **Milestone 1.4 (Data Dictionary & Schema Freeze)**  
 
 ---
 
-## 1. Executive Summary & Context
+## 1. Executive Summary & Objective
 
-This report provides a non-technical synthesis of the exploratory data analysis conducted on the CPCB surface water quality dataset frozen under **Milestone 1.4 (Data Dictionary & Schema Freeze)**. The objective is to evaluate data quality, assess statistical feature distributions, observe how candidate parameters vary across water-quality classes as descriptive baseline evidence, and outline key constraints for subsequent machine learning and Explainable AI (SHAP) modeling.
+This report provides a concise, non-technical synthesis of the exploratory data analysis conducted on the interim CPCB surface water quality dataset. The objective is to summarize data distributions, characterize class imbalance, examine how candidate water quality parameters vary across ground-truth classes as descriptive baseline evidence, and document constraints for downstream modeling.
 
-The primary target variable is **`wqi_class`** (a 5-tier classification standard derived from CPCB Water Quality Index formulas: *Excellent*, *Good*, *Poor*, *Very Poor*, and *Unsuitable*), alongside a secondary binary target **`Potability`** (*Potable* vs. *Non-Potable*). The candidate feature set is strictly bound to the 4 frozen features established in M1.4: `Potential of Hydrogen (pH)`, `Dissolved oxygen (mg/L)`, `Biochemical Oxygen Demand (mg/L)`, and `Fecal Coliform (MPN/100mL)`.
+Per the **Milestone 1.4 Schema Freeze**, the target variable is **`wqi_class`** (a 5-tier classification standard derived from CPCB Water Quality Index formulas: *Excellent*, *Good*, *Poor*, *Very Poor*, and *Unsuitable*), alongside a secondary binary target **`Potability`** (*Potable* vs. *Non-Potable*). The candidate feature set is strictly defined as the four frozen parameters:
+1. `Potential of Hydrogen (pH)`
+2. `Dissolved oxygen (mg/L)`
+3. `Biochemical Oxygen Demand (mg/L)`
+4. `Fecal Coliform (MPN/100mL)`
+
+All four features are retained in the preprocessing pipeline without premature feature selection or elimination based on exploratory plots.
 
 ---
 
 ## 2. Key Findings
 
-### 2.1 Severe Target Class Imbalance
-The monitored surface water bodies exhibit substantial pollution skew, resulting in extreme class imbalance across the 3,287 records:
+### 2.1 Target Class Distribution & Imbalance
+The analyzed surface water dataset exhibits substantial class imbalance across the 3,287 observations:
 
 | Water Quality Class | Category | Count | Percentage | Imbalance Characterization |
 |:---|:---|---:|---:|:---|
-| **Class A (Excellent)** | Potable | 7 | **0.21%** | **Extreme Minority** (Near-zero baseline) |
+| **Class A (Excellent)** | Potable | 7 | **0.21%** | **Extreme Minority** ($N=7$) |
 | **Class B (Good)** | Potable | 110 | **3.35%** | **Severe Minority** |
 | **Class C (Poor)** | Non-Potable | 455 | **13.84%** | Moderate |
 | **Class D (Very Poor)** | Non-Potable | 919 | **27.96%** | High |
 | **Class E (Unsuitable)** | Non-Potable | 1,796 | **54.64%** | **Dominant Majority** |
 | **Total** | | **3,287** | **100.00%** | |
 
-*Summary*: Over **82.6%** of monitored water samples are classified as *Very Poor* or *Unsuitable* for consumption without extensive conventional treatment, reflecting severe urban and industrial runoff. A naive majority-class classifier would achieve **54.64%** raw accuracy simply by predicting *Class E* for every sample.
+*Summary*: Over **82.6%** of monitored observations belong to *Very Poor* (27.96%) or *Unsuitable* (54.64%) classes. A naive majority-class classifier would achieve **54.64%** raw accuracy simply by predicting *Class E* for every sample.
 
 ---
 
-### 2.2 Descriptive Parameter-vs-Class Separation
+### 2.2 Descriptive Parameter-vs-Class Distributions
 
-Evaluating how individual physical, chemical, and biological measurements distribute across classes provides **descriptive exploratory evidence** to contextualize how raw readings align with ground-truth classes. 
-
-> [!NOTE]
-> **Methodological Note**: Visual class separation serves as descriptive EDA evidence only. It does **not** determine final feature importance or predictive capacity, nor is any feature selected or eliminated based on these plots. All 4 frozen features from M1.4 are retained for model training and subsequent SHAP evaluation (Phase 7).
+The box and violin plots summarize the observed empirical distributions, median shifts, overlap, and spreads across classes for the four frozen features:
 
 ```
-          [ Clear Visual Spread ]                            [ Central Clustering ]
-   BOD  ───────────►  Fecal Coliform  ───────────►  DO  ───────────►  pH
-(Wide Separation)   (Microbial Spread)        (Oxygen Drop)       (Buffered Range)
+          [ Clear Progressive Shift ]                        [ Overlapping Central Values ]
+   BOD  ───────────►  Dissolved Oxygen  ───────────►  Fecal Coliform  ───────────►  pH
+(Median Shift)       (Lower-Tail Drop)              (Extreme Skew)               (Buffered)
 ```
 
 1. **Biochemical Oxygen Demand (BOD)**:
-   - *Descriptive Observation*: Median BOD increases across classes from low levels ($<2.0\text{ mg/L}$) in *Good* waters to elevated concentrations ($>25\text{ mg/L}$, reaching $127\text{ mg/L}$) in *Class E (Unsuitable)* waters.
-   - *Context*: Provides a clear empirical contrast between clean and highly polluted sample groups.
+   - *Distribution*: Exhibits a progressive increase in central values across classes: *Good* (median $1.30\text{ mg/L}$, IQR $1.20 - 1.40$), *Poor* (median $1.80\text{ mg/L}$, IQR $1.60 - 2.10$), *Very Poor* (median $3.00\text{ mg/L}$, IQR $2.80 - 3.40$), and *Unsuitable* (median $6.80\text{ mg/L}$, IQR $4.40 - 12.00\text{ mg/L}$).
+   - *Spread & Tail*: In *Class E*, while the central 50% of observations lie between $4.40$ and $12.00\text{ mg/L}$, an extended upper tail reaches up to $127.00\text{ mg/L}$.
 
-2. **Fecal Coliform (FC)**:
-   - *Descriptive Observation*: Spans a wide dynamic range (median $140\text{ MPN/100mL}$ in cleaner waters up to extreme bacterial surges exceeding $10^6 - 10^7\text{ MPN/100mL}$ in *Class E*).
-   - *Context*: Highlights acute biological contamination in lower quality classes.
+2. **Dissolved Oxygen (DO)**:
+   - *Distribution*: Central values shift downward from *Good* (median $8.95\text{ mg/L}$, IQR $8.58 - 9.28$) and *Poor* (median $7.30\text{ mg/L}$, IQR $6.90 - 8.40$) to *Very Poor* (median $7.00\text{ mg/L}$, IQR $6.20 - 7.70$) and *Unsuitable* (median $5.40\text{ mg/L}$, IQR $4.20 - 6.70$).
+   - *Spread & Tail*: In *Class E*, the lower tail extends into hypoxic levels below $2.00\text{ mg/L}$ (minimum observed: $0.30\text{ mg/L}$), while occasional supersaturated readings extend up to $28.00\text{ mg/L}$.
 
-3. **Dissolved Oxygen (DO)**:
-   - *Descriptive Observation*: Waters in *Excellent* / *Good* classes maintain higher median dissolved oxygen ($>6.5\text{ mg/L}$), whereas samples in *Class D* / *Class E* exhibit lower oxygen levels frequently below $2.0\text{ mg/L}$.
-   - *Context*: Reflects oxygen depletion characteristic of organically degraded surface water.
+3. **Fecal Coliform (FC)**:
+   - *Distribution*: Exhibits notable overlap across classes within central quartiles (*Good* median $220.0\text{ MPN/100mL}$, *Poor* median $6.1\text{ MPN/100mL}$, *Very Poor* median $20.0\text{ MPN/100mL}$, *Unsuitable* median $220.0\text{ MPN/100mL}$).
+   - *Spread & Tail*: The *Unsuitable* class displays an extremely wide, heavy-tailed distribution with an upper quartile of $11,000\text{ MPN/100mL}$ and maximum observed concentrations reaching $2.2 \times 10^7\text{ MPN/100mL}$.
 
 4. **Potential of Hydrogen (pH)**:
-   - *Descriptive Observation*: Across classes *A* through *D*, pH remains centrally clustered around neutral-to-alkaline ranges (median $7.70$, IQR $7.30 - 8.10$), while *Class E* shows broader spread ($3.45$ to $9.20$).
-   - *Context*: Visual overlap across intermediate classes reflects that pH alone is a buffered parameter; its diagnostic value occurs primarily during acute acidic or alkaline discharge events.
+   - *Distribution*: Medians remain tightly buffered between $7.20$ and $7.95$ across all five classes (*Excellent*: $7.20$, *Good*: $7.32$, *Poor*: $7.60$, *Very Poor*: $7.95$, *Unsuitable*: $7.80$).
+   - *Spread & Tail*: While classes *A* through *D* remain within $6.20 - 8.93$, *Class E* exhibits the widest range ($3.45$ to $9.20$).
+
+> [!NOTE]
+> **Methodological Boundary**: Visual separation and distributional differences serve strictly as descriptive exploratory evidence. They do **not** establish predictive importance, feature rankings, or SHAP attribution. Formal model explanations will be evaluated in Phase 7.
 
 ---
 
 ### 2.3 Feature Correlation & Multicollinearity
-- **Redundancy Threshold Check**: Pairwise linear (Pearson $r$) and monotonic (Spearman $\rho$) correlations were audited across all features. **No pairwise correlation exceeded the $|r| > 0.85$ redundancy threshold**.
-- **Physical Relationships**: A moderate negative correlation exists between Dissolved Oxygen and BOD ($\rho = -0.36$), reflecting natural microbial oxygen consumption during organic breakdown. BOD and Fecal Coliform correlate positively ($r = +0.31$, $\rho = +0.51$) due to co-occurrence in municipal sewage outfalls.
-- **Conclusion**: All four candidate features contribute distinct, non-redundant signals and are retained for model training.
+- **Redundancy Threshold Check**: Pairwise Pearson ($r$) and Spearman ($\rho$) correlation coefficients were computed across all numeric candidate features. **No pairwise correlation exceeded the $|r| > 0.85$ redundancy threshold**.
+- **Observed Associations**: Dissolved Oxygen and BOD show a moderate negative rank correlation ($\rho = -0.36$), while BOD and Fecal Coliform exhibit a positive rank correlation ($\rho = +0.51$, $r = +0.31$).
+- **Conclusion**: All four candidate features contribute non-redundant measurements and are retained for model development.
 
 ---
 
 ### 2.4 Spatial and Temporal Observations
-- **Spatial Coverage**: The dataset spans monitoring stations across Maharashtra ($N = 1,896$, $57.7\%$) and Uttar Pradesh ($N = 1,391$, $42.3\%$). Both states exhibit high representation of *Class D* and *Class E* waters along major river stretches (e.g., Godavari, Krishna, Ganga, Yamuna basins).
-- **Temporal Consistency**: Continuous sampling records from 2021 through 2025 demonstrate stable class distribution proportions over time without anomalous missing periods or single-year reporting bias.
+- **Spatial Breakdown by State**:
+  - *Maharashtra* ($N = 1,896$, $57.7\%$ of total): Class A: $0.32\%$, Class B: $1.16\%$, Class C: $11.34\%$, Class D: $31.43\%$, Class E: $55.75\%$.
+  - *Uttar Pradesh* ($N = 1,391$, $42.3\%$ of total): Class A: $0.07\%$, Class B: $6.33\%$, Class C: $17.25\%$, Class D: $23.22\%$, Class E: $53.13\%$.
+  - Both state subsets show a majority of samples classified as *Class E* ($>53\%$).
+- **Temporal Coverage**:
+  - Analysis of the timestamp field (`Data Acquisition Time`) indicates that all timestamped records ($N = 2,610$, with $677$ missing timestamps) originate from sampling dates within the calendar year **2021** (January 2021 – December 2021).
+  - **Multi-year temporal trend analysis (e.g., across 2021–2025) is not supported by the available labeled dataset.**
 
 ---
 
-## 3. Modeling & Decision Support Directives (Phase 4 – 9)
+## 3. Modeling & Evaluation Directives (Phase 4 – 9)
 
-Based on these empirical findings, the downstream tracks must adhere to the following directives:
-
-1. **Mandatory Stratified Splitting (M4.2)**: Standard random train/test splits risk leaving *Class A* ($N=7$) completely absent from test sets. Splitting must use `StratifiedKFold(n_splits=5, shuffle=True, random_state=42)`.
-2. **Primary Performance Metrics (M5.1)**: Raw classification accuracy must be deprecated in favor of **Macro F1-Score**, **Balanced Accuracy**, and **Per-Class Precision-Recall curves**.
-3. **Imbalance Mitigation Benchmarking (M6.1)**: Baseline unweighted models must be compared against class-weighted loss penalties (`class_weight='balanced'`) and synthetic oversampling (SMOTE).
-4. **SHAP Interpretation Sanity Check (M7.1)**: Feature importance in tree models (XGBoost, Random Forest) should reflect the empirical separation hierarchy identified in this report (BOD & FC > DO > pH).
+1. **Stratified Partitioning (M4.2)**: Given the extreme scarcity of *Class A* ($N=7$), standard unstratified splits risk omitting minority samples from evaluation folds. Splitting must use `StratifiedKFold(n_splits=5, shuffle=True, random_state=42)`.
+2. **Primary Evaluation Metrics (M5.1)**: Raw classification accuracy is uninformative due to majority class dominance ($54.64\%$). Model comparisons must prioritize **Macro F1-Score**, **Balanced Accuracy**, and per-class **Precision-Recall metrics**.
+3. **Imbalance Handling Benchmarking (M6.1)**: Baseline unweighted models should be compared against class-weighted loss formulations (`class_weight='balanced'`) and synthetic oversampling strategies.
 
 ---
 
 ## 4. Visual Artifact References
-All associated figures are archived in the repository for review:
 - Univariate Histograms & Boxplots: [`reports/figures/eda/`](file:///d:/Coding/College/Data%20science/CP/reports/figures/eda/)
 - Parameter-vs-Class Separation Figures: [`reports/figures/parameter_vs_class/`](file:///d:/Coding/College/Data%20science/CP/reports/figures/parameter_vs_class/)
 - Spatial & Temporal Distributions: [`reports/figures/parameter_vs_class/spatial_state_wqi_distribution.png`](file:///d:/Coding/College/Data%20science/CP/reports/figures/parameter_vs_class/spatial_state_wqi_distribution.png)
-- Ground-Truth Class Table: [`reports/class_distribution.csv`](file:///d:/Coding/College/Data%20science/CP/reports/class_distribution.csv)
+- Ground-Truth Class Distribution Table: [`reports/class_distribution.csv`](file:///d:/Coding/College/Data%20science/CP/reports/class_distribution.csv)

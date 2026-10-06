@@ -449,11 +449,12 @@ def generate_spatial_temporal_plots(
                 edgecolor="black",
                 linewidth=0.8,
             )
-            plt.title("Temporal Water Quality Class Trajectory (2021 - 2025)", fontsize=13, fontweight="bold")
-            plt.xlabel("Year", fontsize=11)
-            plt.ylabel("Percentage of Annual Observations (%)", fontsize=11)
+            plt.title("Temporal Water Quality Class Distribution (Observed Year: 2021)", fontsize=13, fontweight="bold")
+            plt.xlabel("Sampling Year", fontsize=11)
+            plt.ylabel("Percentage of Observations (%)", fontsize=11)
             plt.legend(title="WQI Class", bbox_to_anchor=(1.05, 1), loc="upper left")
             plt.xticks(rotation=0)
+            plt.figtext(0.5, 0.01, "* Note: All timestamped records in current labeled dataset are from 2021; multi-year analysis is not supported.", ha="center", fontsize=9, style="italic")
             plt.tight_layout()
             
             year_file = out_path / "temporal_yearly_wqi_distribution.png"
