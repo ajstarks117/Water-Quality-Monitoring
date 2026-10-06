@@ -11,9 +11,9 @@
 
 ## 1. Executive Summary & Context
 
-This report provides a non-technical synthesis of the exploratory data analysis conducted on the frozen CPCB surface water quality dataset. The objective is to evaluate data quality, assess statistical feature distributions, identify which chemical and biological parameters effectively distinguish clean from polluted water, and outline key constraints for subsequent machine learning and Explainable AI (SHAP) modeling.
+This report provides a non-technical synthesis of the exploratory data analysis conducted on the CPCB surface water quality dataset frozen under **Milestone 1.4 (Data Dictionary & Schema Freeze)**. The objective is to evaluate data quality, assess statistical feature distributions, observe how candidate parameters vary across water-quality classes as descriptive baseline evidence, and outline key constraints for subsequent machine learning and Explainable AI (SHAP) modeling.
 
-The primary target variable is **`wqi_class`** (a 5-tier classification standard derived from CPCB Water Quality Index formulas: *Excellent*, *Good*, *Poor*, *Very Poor*, and *Unsuitable*), alongside a secondary binary target **`Potability`** (*Potable* vs. *Non-Potable*).
+The primary target variable is **`wqi_class`** (a 5-tier classification standard derived from CPCB Water Quality Index formulas: *Excellent*, *Good*, *Poor*, *Very Poor*, and *Unsuitable*), alongside a secondary binary target **`Potability`** (*Potable* vs. *Non-Potable*). The candidate feature set is strictly bound to the 4 frozen features established in M1.4: `Potential of Hydrogen (pH)`, `Dissolved oxygen (mg/L)`, `Biochemical Oxygen Demand (mg/L)`, and `Fecal Coliform (MPN/100mL)`.
 
 ---
 
@@ -35,31 +35,34 @@ The monitored surface water bodies exhibit substantial pollution skew, resulting
 
 ---
 
-### 2.2 Parameter-vs-Class Separation (Bridge to SHAP Explainability)
+### 2.2 Descriptive Parameter-vs-Class Separation
 
-Evaluating how individual physical, chemical, and biological measurements distribute across classes provides early, direct expectations for model feature importance and SHAP explanations (Phase 7):
+Evaluating how individual physical, chemical, and biological measurements distribute across classes provides **descriptive exploratory evidence** to contextualize how raw readings align with ground-truth classes. 
+
+> [!NOTE]
+> **Methodological Note**: Visual class separation serves as descriptive EDA evidence only. It does **not** determine final feature importance or predictive capacity, nor is any feature selected or eliminated based on these plots. All 4 frozen features from M1.4 are retained for model training and subsequent SHAP evaluation (Phase 7).
 
 ```
-       [ High Class Separation ]                         [ Subtle Separation ]
+          [ Clear Visual Spread ]                            [ Central Clustering ]
    BOD  ───────────►  Fecal Coliform  ───────────►  DO  ───────────►  pH
-(Strongest Driver)  (Biological Pollution)     (Oxygen Health)    (Stable Buffer)
+(Wide Separation)   (Microbial Spread)        (Oxygen Drop)       (Buffered Range)
 ```
 
-1. **Biochemical Oxygen Demand (BOD) — Strongest Separator**:
-   - *Observation*: Median BOD increases monotonically from pristine baseline levels ($<2.0\text{ mg/L}$) in *Good* waters to severe concentrations ($>25\text{ mg/L}$, peaking at $127\text{ mg/L}$) in *Class E (Unsuitable)* waters.
-   - *SHAP Expectation*: High BOD will emerge as a dominant driver pushing predictions toward *Very Poor* and *Unsuitable*.
+1. **Biochemical Oxygen Demand (BOD)**:
+   - *Descriptive Observation*: Median BOD increases across classes from low levels ($<2.0\text{ mg/L}$) in *Good* waters to elevated concentrations ($>25\text{ mg/L}$, reaching $127\text{ mg/L}$) in *Class E (Unsuitable)* waters.
+   - *Context*: Provides a clear empirical contrast between clean and highly polluted sample groups.
 
-2. **Fecal Coliform (FC) — Strong Biological Pollution Separator**:
-   - *Observation*: Spans a vast dynamic range (median $140\text{ MPN/100mL}$ in clean waters up to extreme bacterial surges exceeding $10^6 - 10^7\text{ MPN/100mL}$ in *Class E*).
-   - *SHAP Expectation*: Extreme microbial counts will heavily penalize potability and serve as a primary indicator of untreated domestic sewage contamination.
+2. **Fecal Coliform (FC)**:
+   - *Descriptive Observation*: Spans a wide dynamic range (median $140\text{ MPN/100mL}$ in cleaner waters up to extreme bacterial surges exceeding $10^6 - 10^7\text{ MPN/100mL}$ in *Class E*).
+   - *Context*: Highlights acute biological contamination in lower quality classes.
 
-3. **Dissolved Oxygen (DO) — Clear Inverted Health Separator**:
-   - *Observation*: Healthy waters (*Excellent* / *Good*) maintain robust dissolved oxygen ($>6.5\text{ mg/L}$). Severely polluted waters (*Class D* / *Class E*) regularly drop into hypoxic and anoxic zones ($<2.0\text{ mg/L}$).
-   - *SHAP Expectation*: Low DO values will strongly contribute to negative water quality classifications.
+3. **Dissolved Oxygen (DO)**:
+   - *Descriptive Observation*: Waters in *Excellent* / *Good* classes maintain higher median dissolved oxygen ($>6.5\text{ mg/L}$), whereas samples in *Class D* / *Class E* exhibit lower oxygen levels frequently below $2.0\text{ mg/L}$.
+   - *Context*: Reflects oxygen depletion characteristic of organically degraded surface water.
 
-4. **Potential of Hydrogen (pH) — Subtle Class Separation**:
-   - *Observation*: Across classes *A* through *D*, pH remains tightly buffered around neutral-to-alkaline ranges (median $7.70$, IQR $7.30 - 8.10$). Only in *Class E* does the distribution widen to capture extreme acidic ($3.45$) and alkaline ($9.20$) runoff events.
-   - *SHAP Expectation*: pH will exhibit lower global SHAP attribution compared to BOD and FC, but will produce acute local impact during extreme chemical spill anomalies.
+4. **Potential of Hydrogen (pH)**:
+   - *Descriptive Observation*: Across classes *A* through *D*, pH remains centrally clustered around neutral-to-alkaline ranges (median $7.70$, IQR $7.30 - 8.10$), while *Class E* shows broader spread ($3.45$ to $9.20$).
+   - *Context*: Visual overlap across intermediate classes reflects that pH alone is a buffered parameter; its diagnostic value occurs primarily during acute acidic or alkaline discharge events.
 
 ---
 
