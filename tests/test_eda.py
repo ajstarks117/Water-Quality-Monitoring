@@ -1,10 +1,12 @@
 """
-Unit Test Suite for Milestone 3.1: Univariate, Correlation & Class-Balance Analysis
-===================================================================================
+Unit Test Suite for Milestone 3.1 & 3.2: Exploratory Data Analysis & Parameter-vs-Class Report
+=============================================================================================
 Test Cases:
 - TC-3.1-01: All numeric features have distribution plots (histogram + boxplot saved)
 - TC-3.1-02: Correlation matrix computed correctly (spot-checked against pandas .corr())
 - TC-3.1-03: Class distribution export is accurate (percentages sum to 100% within tolerance)
+- TC-3.2-01: Parameter-vs-class plots generated for all key candidate parameters
+- TC-3.2-02: EDA summary report readability check (reports/eda_summary.md exists and is accurate)
 """
 
 from pathlib import Path
@@ -22,6 +24,8 @@ from src.features.eda import (
     generate_univariate_plots,
     generate_correlation_heatmap,
     generate_class_distribution_plot,
+    generate_parameter_vs_class_plots,
+    generate_spatial_temporal_plots,
     run_full_eda,
 )
 
@@ -87,8 +91,6 @@ def test_tc_3_1_02_no_premature_redundancy_drops(labeled_df):
     corr_matrix = compute_correlation_matrix(labeled_df)
     redundant_pairs = find_redundant_feature_pairs(corr_matrix, threshold=0.85)
     
-    # In CPCB water features, pH, DO, BOD, and FC are distinct physical/chemical/microbial metrics
-    # None should have |r| > 0.85
     assert isinstance(redundant_pairs, list)
     for pair in redundant_pairs:
         assert pair["abs_correlation"] > 0.85
@@ -123,6 +125,63 @@ def test_tc_3_1_03_class_distribution_export_accurate(labeled_df, tmp_path):
     assert set(loaded_df["class"]) == expected_classes
 
 
+def test_tc_3_2_01_parameter_vs_class_plots_generated(labeled_df, tmp_path):
+    """
+    TC-3.2-01: Confirm parameter-vs-class plots exist for all frozen candidate parameters.
+    """
+    pvc_plots = generate_parameter_vs_class_plots(
+        labeled_df,
+        output_dir=tmp_path / "parameter_vs_class",
+        feature_columns=FROZEN_CANDIDATE_FEATURES,
+    )
+    
+    assert len(pvc_plots) == len(FROZEN_CANDIDATE_FEATURES)
+    for col in FROZEN_CANDIDATE_FEATURES:
+        assert col in pvc_plots
+        plot_path = Path(pvc_plots[col])
+        assert plot_path.exists()
+        assert plot_path.stat().st_size > 1000
+
+
+def test_tc_3_2_01_spatial_temporal_plots_generated(labeled_df, tmp_path):
+    """
+    Verify that spatial and temporal plots are generated properly.
+    """
+    st_plots = generate_spatial_temporal_plots(
+        labeled_df,
+        output_dir=tmp_path / "parameter_vs_class",
+    )
+    assert "spatial_state" in st_plots
+    assert "temporal_yearly" in st_plots
+    assert Path(st_plots["spatial_state"]).exists()
+    assert Path(st_plots["temporal_yearly"]).exists()
+
+
+def test_tc_3_2_02_eda_summary_report_readability():
+    """
+    TC-3.2-02: Verify reports/eda_summary.md exists, is readable, and contains key findings.
+    """
+    report_file = Path("reports/eda_summary.md")
+    assert report_file.exists(), "reports/eda_summary.md must exist"
+    
+    content = report_file.read_text(encoding="utf-8")
+    assert len(content) > 500, "EDA summary report is too brief"
+    
+    # Must contain class imbalance breakdown
+    assert "Class A" in content or "0.21%" in content
+    assert "Class E" in content or "54.64%" in content
+    
+    # Must mention top separating parameters
+    assert "Biochemical Oxygen Demand" in content or "BOD" in content
+    assert "Fecal Coliform" in content
+    assert "Dissolved Oxygen" in content
+    assert "pH" in content
+    
+    # Must be linked in README.md
+    readme_content = Path("README.md").read_text(encoding="utf-8")
+    assert "eda_summary.md" in readme_content, "reports/eda_summary.md must be linked in README.md"
+
+
 def test_summary_statistics_validity(labeled_df):
     """Verify that summary statistics computation covers all candidate features and ranges."""
     stats = compute_summary_statistics(labeled_df)
@@ -130,7 +189,6 @@ def test_summary_statistics_validity(labeled_df):
     assert "skewness" in stats.columns
     assert "iqr" in stats.columns
     
-    # Check that skewness for BOD and Fecal Coliform is positive and substantial
     fc_row = stats[stats["feature"] == "Fecal Coliform (MPN/100mL)"].iloc[0]
     bod_row = stats[stats["feature"] == "Biochemical Oxygen Demand (mg/L)"].iloc[0]
     assert fc_row["skewness"] > 1.0, "Fecal Coliform should exhibit strong positive skewness"
@@ -149,5 +207,8 @@ def test_full_eda_integration(labeled_df, tmp_path):
     assert "pearson_correlation" in results
     assert "spearman_correlation" in results
     assert "class_distribution" in results
+    assert "parameter_vs_class_plots" in results
+    assert "spatial_temporal_plots" in results
     assert Path(results["heatmap_file"]).exists()
     assert Path(results["class_distribution_plot"]).exists()
+

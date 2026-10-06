@@ -305,22 +305,187 @@ def generate_class_distribution_plot(
     return out_file
 
 
+def generate_parameter_vs_class_plots(
+    df: pd.DataFrame,
+    output_dir: str | Path = "reports/figures/parameter_vs_class",
+    feature_columns: Optional[List[str]] = None,
+    target_column: str = "wqi_class",
+) -> Dict[str, Path]:
+    """
+    Generate box/violin plots for each candidate parameter grouped by target class.
+    
+    Milestone 3.2: Parameter-vs-Class Analysis (Bridge to Phase 7 SHAP).
+    Saves one high-resolution figure per key parameter to output_dir.
+    """
+    out_path = Path(output_dir)
+    out_path.mkdir(parents=True, exist_ok=True)
+    
+    if feature_columns is None:
+        feature_columns = [col for col in FROZEN_CANDIDATE_FEATURES if col in df.columns]
+        
+    class_order = ["Excellent", "Good", "Poor", "Very Poor", "Unsuitable"]
+    palette = ["#2ecc71", "#3498db", "#f39c12", "#e67e22", "#e74c3c"]
+    
+    saved_plots: Dict[str, Path] = {}
+    
+    for col in feature_columns:
+        safe_name = col.lower().replace(" ", "_").replace("(", "").replace(")", "").replace("/", "_")
+        sub_df = df[[col, target_column]].dropna()
+        
+        fig, axes = plt.subplots(1, 2, figsize=(15, 6))
+        
+        # 1. Box Plot with Stripplot overlay
+        sns.boxplot(
+            data=sub_df,
+            x=target_column,
+            y=col,
+            order=class_order,
+            hue=target_column,
+            palette=palette,
+            legend=False,
+            ax=axes[0],
+            fliersize=3,
+        )
+        axes[0].set_title(f"Class-Stratified Box Plot: {col}", fontsize=12, fontweight="bold")
+        axes[0].set_xlabel("Water Quality Class", fontsize=11)
+        axes[0].set_ylabel(col, fontsize=11)
+        
+        # 2. Violin Plot (Distribution shape across classes)
+        sns.violinplot(
+            data=sub_df,
+            x=target_column,
+            y=col,
+            order=class_order,
+            hue=target_column,
+            palette=palette,
+            legend=False,
+            ax=axes[1],
+            inner="quartile",
+            cut=0,
+        )
+        axes[1].set_title(f"Class-Stratified Violin Plot: {col}", fontsize=12, fontweight="bold")
+        axes[1].set_xlabel("Water Quality Class", fontsize=11)
+        axes[1].set_ylabel(col, fontsize=11)
+        
+        # Apply log scale on y if parameter is Fecal Coliform
+        if "fecal" in col.lower() or "coliform" in col.lower():
+            axes[0].set_yscale("log")
+            axes[1].set_yscale("log")
+            axes[0].set_ylabel(f"{col} (Log Scale)")
+            axes[1].set_ylabel(f"{col} (Log Scale)")
+            
+        plt.suptitle(f"Parameter vs. WQI Target Class Separation: {col}", fontsize=14, fontweight="bold", y=0.98)
+        plt.tight_layout()
+        
+        plot_file = out_path / f"{safe_name}_vs_class.png"
+        fig.savefig(plot_file, dpi=300)
+        plt.close(fig)
+        
+        saved_plots[col] = plot_file
+        logger.info(f"Saved parameter-vs-class plot for '{col}' to {plot_file}")
+        
+    return saved_plots
+
+
+def generate_spatial_temporal_plots(
+    df: pd.DataFrame,
+    output_dir: str | Path = "reports/figures/parameter_vs_class",
+) -> Dict[str, Path]:
+    """
+    Generate spatial and temporal distribution plots for CPCB monitoring data.
+    
+    Covers State-level WQI class distributions and yearly temporal observation trends.
+    """
+    out_path = Path(output_dir)
+    out_path.mkdir(parents=True, exist_ok=True)
+    
+    saved_plots: Dict[str, Path] = {}
+    palette = ["#2ecc71", "#3498db", "#f39c12", "#e67e22", "#e74c3c"]
+    class_order = ["Excellent", "Good", "Poor", "Very Poor", "Unsuitable"]
+    
+    # 1. Spatial State Comparison
+    if "State" in df.columns and "wqi_class" in df.columns:
+        plt.figure(figsize=(10, 6))
+        state_cross = pd.crosstab(df["State"], df["wqi_class"], normalize="index")[class_order] * 100.0
+        
+        ax = state_cross.plot(
+            kind="bar",
+            stacked=True,
+            color=palette,
+            figsize=(10, 6),
+            edgecolor="black",
+            linewidth=0.8,
+        )
+        plt.title("Spatial Water Quality Class Breakdown by State (CPCB)", fontsize=13, fontweight="bold")
+        plt.xlabel("State", fontsize=11)
+        plt.ylabel("Percentage of Observations (%)", fontsize=11)
+        plt.legend(title="WQI Class", bbox_to_anchor=(1.05, 1), loc="upper left")
+        plt.xticks(rotation=0)
+        plt.tight_layout()
+        
+        state_file = out_path / "spatial_state_wqi_distribution.png"
+        plt.savefig(state_file, dpi=300)
+        plt.close()
+        saved_plots["spatial_state"] = state_file
+        logger.info(f"Saved spatial distribution plot to {state_file}")
+        
+    # 2. Temporal Yearly Trend
+    if "Data Acquisition Time" in df.columns and "wqi_class" in df.columns:
+        temp_df = df.copy()
+        temp_df["Year"] = pd.to_datetime(temp_df["Data Acquisition Time"], errors="coerce").dt.year
+        valid_years = temp_df.dropna(subset=["Year"])
+        
+        if not valid_years.empty:
+            plt.figure(figsize=(11, 6))
+            year_cross = pd.crosstab(valid_years["Year"].astype(int), valid_years["wqi_class"], normalize="index")
+            available_classes = [c for c in class_order if c in year_cross.columns]
+            year_cross = year_cross[available_classes] * 100.0
+            
+            year_cross.plot(
+                kind="bar",
+                stacked=True,
+                color=palette[:len(available_classes)],
+                figsize=(11, 6),
+                edgecolor="black",
+                linewidth=0.8,
+            )
+            plt.title("Temporal Water Quality Class Trajectory (2021 - 2025)", fontsize=13, fontweight="bold")
+            plt.xlabel("Year", fontsize=11)
+            plt.ylabel("Percentage of Annual Observations (%)", fontsize=11)
+            plt.legend(title="WQI Class", bbox_to_anchor=(1.05, 1), loc="upper left")
+            plt.xticks(rotation=0)
+            plt.tight_layout()
+            
+            year_file = out_path / "temporal_yearly_wqi_distribution.png"
+            plt.savefig(year_file, dpi=300)
+            plt.close()
+            saved_plots["temporal_yearly"] = year_file
+            logger.info(f"Saved temporal distribution plot to {year_file}")
+            
+    return saved_plots
+
+
 def run_full_eda(
     data_path: str | Path = "data/interim/cpcb_labeled.csv",
     reports_dir: str | Path = "reports",
 ) -> Dict[str, Any]:
     """
-    Orchestrate full Milestone 3.1 EDA pipeline:
+    Orchestrate full Milestone 3.1 & 3.2 EDA pipeline:
     1. Load data
     2. Summary stats
     3. Univariate plots
     4. Pearson & Spearman correlation matrices & heatmap
     5. Redundant pairs identification
     6. Class balance analysis & export
+    7. Parameter-vs-class separation plots
+    8. Spatial and temporal distribution plots
     """
     reports_path = Path(reports_dir)
     figures_path = reports_path / "figures" / "eda"
+    pvc_path = reports_path / "figures" / "parameter_vs_class"
+    
     figures_path.mkdir(parents=True, exist_ok=True)
+    pvc_path.mkdir(parents=True, exist_ok=True)
     
     df = load_raw_data(data_path)
     
@@ -355,6 +520,17 @@ def run_full_eda(
         output_path=figures_path / "class_distribution_barplot.png",
     )
     
+    pvc_plots = generate_parameter_vs_class_plots(
+        df,
+        output_dir=pvc_path,
+        feature_columns=FROZEN_CANDIDATE_FEATURES,
+    )
+    
+    spatial_temporal_plots = generate_spatial_temporal_plots(
+        df,
+        output_dir=pvc_path,
+    )
+    
     results = {
         "summary_statistics": summary_stats,
         "univariate_plots": univariate_plots,
@@ -365,11 +541,14 @@ def run_full_eda(
         "spearman_heatmap_file": spearman_heatmap_file,
         "class_distribution": class_dist,
         "class_distribution_plot": class_plot,
+        "parameter_vs_class_plots": pvc_plots,
+        "spatial_temporal_plots": spatial_temporal_plots,
     }
     
-    logger.info("Milestone 3.1 EDA pipeline completed successfully.")
+    logger.info("Milestone 3.1 & 3.2 EDA pipeline completed successfully.")
     return results
 
 
 if __name__ == "__main__":
     run_full_eda()
+
