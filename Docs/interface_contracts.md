@@ -42,9 +42,23 @@ This document specifies the two hard interface contracts binding **Track A (Data
 - Complete 70-column enumeration is documented in [`Docs/data_dictionary.md`](file:///d:/Coding/College/Data%20science/CP/Docs/data_dictionary.md).
 
 ### Imputation & Preprocessing Guarantees
-- Cleaned train/test split files: `data/processed/train.csv` and `data/processed/test.csv` (generated in Phase 2).
+- Cleaned train/test split files: `data/processed/train.csv` and `data/processed/test.csv` (generated in Phase 2 / 4).
 - Candidate feature column ordering is strictly preserved in `config/config.yaml` (`feature_columns`).
 - **Modification Rule**: Any schema change after M1.4 requires an explicit exception in `#water-quality-core` and updates to `config/config.yaml`.
+
+### 1.5 Final Extended Feature List (Milestone 4.1 Feature Engineering)
+
+Per Milestone 4.1, the raw candidate feature set frozen in M1.4 is preserved intact, with domain-justified, leakage-checked engineered additions:
+
+| Feature Name | Type | Input Provenance | Domain Justification | Prediction-Time Availability | Max $|r|$ vs Raw |
+|:---|:---|:---|:---|:---|---:|
+| `Potential of Hydrogen (pH)` | Raw (M1.4) | Raw User Sensor Input | Core chemical equilibrium metric | Always Available | — |
+| `Dissolved oxygen (mg/L)` | Raw (M1.4) | Raw User Sensor Input | Primary aquatic oxygen health metric | Always Available | — |
+| `Biochemical Oxygen Demand (mg/L)` | Raw (M1.4) | Raw User Sensor Input | Organic pollution load metric | Always Available | — |
+| `Fecal Coliform (MPN/100mL)` | Raw (M1.4) | Raw User Sensor Input | Microbial pathogenic indicator | Always Available | — |
+| `Log10 Fecal Coliform` | **Engineered (M4.1)** | `log10(max(FC, 1.0))` | Linearizes 7 orders of magnitude bacterial skewness ($+33.98$) | Computed from raw FC input | $0.484$ (Non-redundant) |
+
+> **Leakage & Provenance Guarantee**: `Log10 Fecal Coliform` depends strictly on `Fecal Coliform (MPN/100mL)` entered by the dashboard user at inference time. It has zero dependence on `wqi_class`, `wqi_score`, `Potability`, or global/future aggregates.
 
 ---
 
