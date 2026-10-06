@@ -16,6 +16,18 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 import numpy as np
 import pandas as pd
+from sklearn.compose import ColumnTransformer
+from sklearn.impute import SimpleImputer
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import OneHotEncoder, RobustScaler, StandardScaler
+
+# Frozen Candidate Feature Names from M1.4 Schema Lock
+FROZEN_CANDIDATE_FEATURES: List[str] = [
+    "Potential of Hydrogen (pH)",
+    "Dissolved oxygen (mg/L)",
+    "Biochemical Oxygen Demand (mg/L)",
+    "Fecal Coliform (MPN/100mL)",
+]
 
 # Configure structured logging
 logger = logging.getLogger("preprocessing")
@@ -357,24 +369,275 @@ def handle_outliers(
     return df_out, report
 
 
+# ---------------------------------------------------------------------------
+# M2.3: Leakage-Safe scikit-learn Preprocessing Pipeline Builder
+# ---------------------------------------------------------------------------
+@dataclass
+class PreprocessingPipelineResult:
+    """Container for the M2.3 preprocessing pipeline build output.
+
+    Attributes:
+        pipeline: Unfitted scikit-learn Pipeline wrapping ColumnTransformer.
+                  MUST be fit ONLY on X_train after the train/test split (M4.2).
+        feature_names: Ordered list of candidate feature column names entering
+                       the pipeline (matches config/config.yaml feature_columns).
+        target_column: Name of the primary target column ('wqi_class').
+        secondary_target_column: Name of the secondary target column ('Potability').
+        X: Feature matrix (pd.DataFrame) extracted from the cleaned DataFrame.
+        y: Primary target series extracted from the cleaned DataFrame.
+        y_secondary: Secondary target series (Potability) if present, else None.
+        leakage_columns_verified_absent: List of leakage columns confirmed absent
+                                          from the feature matrix X.
+        cleaning_state: The PreprocessingState from the missing-value step.
+        outlier_report: The OutlierAuditReport from the outlier step.
+    """
+    pipeline: Pipeline = field(default=None)  # type: ignore[assignment]
+    feature_names: List[str] = field(default_factory=list)
+    target_column: str = "wqi_class"
+    secondary_target_column: str = "Potability"
+    X: Optional[pd.DataFrame] = field(default=None)
+    y: Optional[pd.Series] = field(default=None)
+    y_secondary: Optional[pd.Series] = field(default=None)
+    leakage_columns_verified_absent: List[str] = field(default_factory=list)
+    cleaning_state: Optional[PreprocessingState] = field(default=None)
+    outlier_report: Optional[OutlierAuditReport] = field(default=None)
+
+
+class DataLeakageError(Exception):
+    """Raised when a known leakage column is detected in the feature matrix."""
+    pass
+
+
+def build_preprocessing_pipeline(
+    df_cleaned: pd.DataFrame,
+    feature_columns: Optional[List[str]] = None,
+    target_column: str = "wqi_class",
+    secondary_target_column: str = "Potability",
+    leakage_columns: Optional[List[str]] = None,
+    scaler: str = "standard",
+    impute_in_pipeline: bool = True,
+) -> PreprocessingPipelineResult:
+    """Build a leakage-safe scikit-learn Pipeline for the CPCB dataset.
+
+    This function constructs but does NOT fit the Pipeline. Fitting must happen
+    only on X_train after the train/test split performed in M4.2. This is the
+    core anti-leakage design: no global statistics (mean, std, median) are
+    computed across the full dataset.
+
+    The Pipeline internally chains:
+        1. SimpleImputer (median) — fills remaining NaNs that survive
+           the M2.1 handle_missing_values step (edge cases in unseen data).
+        2. StandardScaler (default) or RobustScaler — numeric feature scaling.
+
+    Args:
+        df_cleaned: DataFrame that has already passed through handle_duplicates,
+                    handle_missing_values, and handle_outliers (M2.1 + M2.2).
+        feature_columns: Explicit list of feature column names. Defaults to
+                         FROZEN_CANDIDATE_FEATURES from M1.4 schema lock.
+        target_column: Primary target column name (default: 'wqi_class').
+        secondary_target_column: Secondary target column (default: 'Potability').
+        leakage_columns: Columns that MUST NOT appear in X. Defaults to ['wqi_score'].
+        scaler: Scaler type — 'standard' (StandardScaler) or 'robust' (RobustScaler).
+        impute_in_pipeline: If True, includes SimpleImputer(strategy='median')
+                            as the first pipeline step to handle edge-case NaNs.
+
+    Returns:
+        PreprocessingPipelineResult containing the unfitted pipeline, X, y, and
+        leakage verification metadata.
+
+    Raises:
+        DataLeakageError: If any leakage column is found in feature_columns.
+        ValueError: If required feature or target columns are missing from df_cleaned.
+    """
+    features = feature_columns or list(FROZEN_CANDIDATE_FEATURES)
+    leakage_cols = leakage_columns or ["wqi_score"]
+
+    # -----------------------------------------------------------------------
+    # Guard 1: Leakage column presence check
+    # -----------------------------------------------------------------------
+    leaked = [c for c in leakage_cols if c in features]
+    if leaked:
+        raise DataLeakageError(
+            f"CRITICAL: Leakage columns detected in feature set: {leaked}. "
+            f"'wqi_score' is the continuous value from which '{target_column}' was derived. "
+            f"Including it would cause 100% artificial accuracy and total test leakage."
+        )
+
+    # -----------------------------------------------------------------------
+    # Guard 2: Verify all required columns exist in the cleaned DataFrame
+    # -----------------------------------------------------------------------
+    missing_features = [f for f in features if f not in df_cleaned.columns]
+    if missing_features:
+        raise ValueError(
+            f"Required feature columns missing from cleaned DataFrame: {missing_features}. "
+            f"Available columns: {list(df_cleaned.columns)}"
+        )
+    if target_column not in df_cleaned.columns:
+        raise ValueError(
+            f"Target column '{target_column}' not found in DataFrame. "
+            f"Available columns: {list(df_cleaned.columns)}"
+        )
+
+    # -----------------------------------------------------------------------
+    # Guard 3: Verify leakage columns are absent from the DataFrame itself
+    # -----------------------------------------------------------------------
+    leakage_present_in_df = [c for c in leakage_cols if c in df_cleaned.columns]
+    leakage_verified = [c for c in leakage_cols if c not in df_cleaned.columns]
+
+    # -----------------------------------------------------------------------
+    # Extract X (features) and y (targets)
+    # -----------------------------------------------------------------------
+    X = df_cleaned[features].copy()
+    y = df_cleaned[target_column].copy()
+    y_secondary = (
+        df_cleaned[secondary_target_column].copy()
+        if secondary_target_column in df_cleaned.columns
+        else None
+    )
+
+    # Final leakage assertion on extracted X
+    for lc in leakage_cols:
+        if lc in X.columns:
+            raise DataLeakageError(
+                f"CRITICAL: Leakage column '{lc}' found in extracted feature matrix X."
+            )
+
+    # -----------------------------------------------------------------------
+    # Build scikit-learn Pipeline with ColumnTransformer
+    # -----------------------------------------------------------------------
+    # Determine which features are numeric vs categorical
+    numeric_features = [f for f in features if pd.api.types.is_numeric_dtype(df_cleaned[f])]
+    categorical_features = [f for f in features if not pd.api.types.is_numeric_dtype(df_cleaned[f])]
+
+    # Numeric sub-pipeline
+    numeric_steps: List[Tuple[str, Any]] = []
+    if impute_in_pipeline:
+        numeric_steps.append(("imputer", SimpleImputer(strategy="median")))
+
+    if scaler == "robust":
+        numeric_steps.append(("scaler", RobustScaler()))
+    else:
+        numeric_steps.append(("scaler", StandardScaler()))
+
+    numeric_pipeline = Pipeline(steps=numeric_steps)
+
+    # Build ColumnTransformer
+    transformers: List[Tuple[str, Any, List[str]]] = []
+    if numeric_features:
+        transformers.append(("numeric", numeric_pipeline, numeric_features))
+    if categorical_features:
+        transformers.append((
+            "categorical",
+            Pipeline([("encoder", OneHotEncoder(handle_unknown="ignore", sparse_output=False))]),
+            categorical_features,
+        ))
+
+    column_transformer = ColumnTransformer(
+        transformers=transformers,
+        remainder="drop",  # Safety: any unexpected column is explicitly dropped
+        verbose_feature_names_out=False,
+    )
+
+    # Wrap in a top-level Pipeline (allows future additions like PCA, feature selection)
+    preprocessing_pipeline = Pipeline(
+        steps=[("preprocessor", column_transformer)],
+        verbose=False,
+    )
+
+    # -----------------------------------------------------------------------
+    # Logging
+    # -----------------------------------------------------------------------
+    logger.info("================ M2.3 PREPROCESSING PIPELINE BUILD ================")
+    logger.info("  Feature Columns: %s", features)
+    logger.info("  Numeric Features: %s", numeric_features)
+    logger.info("  Categorical Features: %s", categorical_features)
+    logger.info("  Scaler: %s", scaler)
+    logger.info("  Imputer in Pipeline: %s", impute_in_pipeline)
+    logger.info("  Leakage Columns Verified Absent from X: %s", leakage_verified)
+    if leakage_present_in_df:
+        logger.warning(
+            "  WARNING: Leakage columns %s still exist in the source DataFrame "
+            "(not in feature matrix X). Ensure they are never added to feature_columns.",
+            leakage_present_in_df,
+        )
+    logger.info("  X Shape: %s | y Shape: %s", X.shape, y.shape)
+    logger.info("  Pipeline Status: BUILT (unfitted — fit ONLY on X_train after split)")
+
+    return PreprocessingPipelineResult(
+        pipeline=preprocessing_pipeline,
+        feature_names=features,
+        target_column=target_column,
+        secondary_target_column=secondary_target_column,
+        X=X,
+        y=y,
+        y_secondary=y_secondary,
+        leakage_columns_verified_absent=leakage_verified,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Full Cleaning + Pipeline Orchestrator
+# ---------------------------------------------------------------------------
+def run_full_cleaning_pipeline(
+    df_raw: pd.DataFrame,
+    cleaning_config: Optional[Dict[str, Any]] = None,
+    outlier_config: Optional[Dict[str, Any]] = None,
+    pipeline_scaler: str = "standard",
+) -> PreprocessingPipelineResult:
+    """Orchestrate the complete M2.1 → M2.2 → M2.3 cleaning pipeline.
+
+    Chains: handle_duplicates → handle_missing_values → handle_outliers →
+            build_preprocessing_pipeline.
+
+    Args:
+        df_raw: Raw labeled DataFrame from load_raw_data().
+        cleaning_config: Config dict for handle_missing_values.
+        outlier_config: Config dict for handle_outliers.
+        pipeline_scaler: Scaler type for the pipeline ('standard' or 'robust').
+
+    Returns:
+        PreprocessingPipelineResult with the unfitted pipeline and cleaned X/y.
+    """
+    logger.info("========== FULL CLEANING PIPELINE START ==========")
+
+    # M2.1: Duplicates
+    df_dedup = handle_duplicates(df_raw)
+
+    # M2.1: Missing values
+    df_clean, state = handle_missing_values(df_dedup, strategy_config=cleaning_config)
+
+    # M2.2: Outlier investigation
+    df_final, outlier_report = handle_outliers(df_clean, rules_config=outlier_config)
+
+    # M2.3: Build the leakage-safe pipeline
+    result = build_preprocessing_pipeline(df_final, scaler=pipeline_scaler)
+    result.cleaning_state = state
+    result.outlier_report = outlier_report
+
+    logger.info("========== FULL CLEANING PIPELINE COMPLETE ==========")
+    return result
+
+
 def main():
     """CLI test execution for preprocessing module."""
     from src.data.load_data import load_raw_data
 
     logger.info("Executing preprocessing demonstration...")
     raw_df = load_raw_data(validate=True)
-    df_dedup = handle_duplicates(raw_df)
-    df_clean, state = handle_missing_values(df_dedup)
-    df_final, outlier_report = handle_outliers(df_clean)
 
-    print(f"\n[Preprocessing & Outlier Pipeline Success]")
-    print(f"  * Initial Shape: {state.initial_shape}")
-    print(f"  * Final Cleaned Shape: {state.final_shape}")
-    print(f"  * Columns Dropped (>40% missing): {len(state.dropped_columns)}")
-    print(f"  * Imputation Values Used: {state.imputation_values}")
-    print(f"  * Statistical Outliers Kept: {outlier_report.statistical_outliers_by_feature}")
-    print(f"  * Invalid Rows Removed: {outlier_report.invalid_rows_removed}")
-    print(f"  * Final Rows: {outlier_report.final_rows}")
+    # Run the full M2.1 → M2.2 → M2.3 pipeline
+    result = run_full_cleaning_pipeline(raw_df)
+
+    print(f"\n[Preprocessing & Pipeline Build Success]")
+    print(f"  * Cleaning State Shape: {result.cleaning_state.initial_shape} → {result.cleaning_state.final_shape}")
+    print(f"  * Columns Dropped (>40% missing): {len(result.cleaning_state.dropped_columns)}")
+    print(f"  * Imputation Values Used: {result.cleaning_state.imputation_values}")
+    print(f"  * Statistical Outliers Kept: {result.outlier_report.statistical_outliers_by_feature}")
+    print(f"  * Invalid Rows Removed: {result.outlier_report.invalid_rows_removed}")
+    print(f"  * Pipeline Feature Names: {result.feature_names}")
+    print(f"  * X Shape: {result.X.shape} | y Shape: {result.y.shape}")
+    print(f"  * Pipeline: {result.pipeline}")
+    print(f"  * Leakage Verified Absent: {result.leakage_columns_verified_absent}")
 
 
 if __name__ == "__main__":

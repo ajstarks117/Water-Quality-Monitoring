@@ -133,3 +133,63 @@ Box plots visualizing distributions and class-stratified distributions are saved
 - `reports/figures/outlier_boxplots/dissolved_oxygen_by_class_boxplot.png`
 - `reports/figures/outlier_boxplots/biochemical_oxygen_demand_by_class_boxplot.png`
 - `reports/figures/outlier_boxplots/fecal_coliform_by_class_boxplot.png`
+
+---
+
+## 7. Leakage-Safe Preprocessing Pipeline Architecture (Milestone 2.3)
+
+### 7.1 Objective & Architecture Overview
+Milestone 2.3 packages all data transformations (imputation, scaling, and feature isolation) into a unified, reusable `sklearn.pipeline.Pipeline` / `ColumnTransformer` object. 
+
+```
+                                 Raw / Cleaned Labeled DataFrame
+                                                │
+                                                ▼
+                                    [ Target & Feature Split ]
+                                                │
+                       ┌────────────────────────┴────────────────────────┐
+                       ▼                                                 ▼
+             Feature Matrix (X)                                  Targets (y / y_bin)
+         (pH, DO, BOD, Fecal Coliform)                        (wqi_class / Potability)
+                       │
+                       ▼
+      ┌─────────────────────────────────┐
+      │   Unfitted Preprocessing        │
+      │   Pipeline (ColumnTransformer)  │
+      │                                 │
+      │  1. SimpleImputer(median)       │
+      │  2. StandardScaler (or Robust)  │
+      └────────────────┬────────────────┘
+                       │
+                       ▼  (Fit strictly on X_train during M4.2)
+      ┌─────────────────────────────────┐
+      │   Fitted Transformation Pipeline│
+      │     (Model-Ready Tensors)       │
+      └─────────────────────────────────┘
+```
+
+### 7.2 Core Architectural Principles & Decisions
+
+#### Decision 1: Unfitted Pipeline Factory Pattern
+- **Contract**: `build_preprocessing_pipeline()` returns an **unfitted** pipeline. Fitting must occur **strictly on `X_train`** inside model cross-validation and training workflows (M4.2).
+- **Rationale**: Fitting scalers or imputers on the full dataset before splitting introduces subtle information leakage (e.g. global mean/variance or median leaking into test evaluation), producing artificially inflated performance metrics.
+
+#### Decision 2: Imputation Inside the Pipeline
+- **Implementation**: `SimpleImputer(strategy='median')` is integrated directly into the `ColumnTransformer` numeric transformer pipeline.
+- **Rationale**: While M2.1 resolves batch missingness, real-time inference or test-set folds may contain edge-case missing readings. Embedding median imputation within the pipeline ensures test folds and live dashboard inference (M9.3) inherit the exact training medians without manual preprocessing steps.
+
+#### Decision 3: Scaler Strategy (StandardScaler with RobustScaler Option)
+- **Primary Scaler**: `StandardScaler()` (standardization to zero mean, unit variance).
+- **Alternative Scaler**: `RobustScaler()` (centering by median, scaling by IQR) configurable via pipeline parameters for linear/distance models sensitive to heavy microbial tails.
+- **Tree-Based Compatibility**: Scaled outputs remain mathematically transparent and fully invertible, while tree-based ensembles (XGBoost, Random Forest, LightGBM) remain invariant to monotonic scaling.
+
+#### Decision 4: Hard Leakage Guards & Schema Isolation
+- **DataLeakageError**: If `wqi_score` (or any target column) is detected inside the feature candidate list, the pipeline factory immediately raises a dedicated `DataLeakageError` rather than proceeding.
+- **Feature Whitelist**: Preprocessing extracts only the frozen candidate features (`Potential of Hydrogen (pH)`, `Dissolved oxygen (mg/L)`, `Biochemical Oxygen Demand (mg/L)`, `Fecal Coliform (MPN/100mL)`), discarding metadata and raw interim metrics.
+
+### 7.3 Inter-Milestone Dependencies & Reusability
+This preprocessing pipeline serves as the single source of truth across all subsequent tracks:
+1. **M4.2 (ML Baseline & Train/Test Split)**: Fits pipeline on `X_train` and transforms `X_val` / `X_test`.
+2. **M6.3 (Explainable AI / SHAP Engine)**: Uses the fitted pipeline to transform background reference data and individual query instances into the exact model feature space.
+3. **M9.3 (Interactive Dashboard Inference)**: Deserializes the fitted pipeline artifact to transform raw user input parameters before calling `model.predict()`.
+
