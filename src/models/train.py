@@ -35,15 +35,22 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Union
 
 import joblib
 import numpy as np
 import pandas as pd
 import yaml
+from sklearn.base import BaseEstimator, ClassifierMixin
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder
+from sklearn.tree import DecisionTreeClassifier
+from xgboost import XGBClassifier
 
 from src.data.load_data import load_raw_data
 from src.data.preprocessing import (
@@ -561,6 +568,185 @@ def perform_split(
 
 
 # ---------------------------------------------------------------------------
+# Milestone 5.1: Baseline Model Training
+# ---------------------------------------------------------------------------
+BASELINE_MODEL_NAMES: List[str] = [
+    "Logistic Regression",
+    "Decision Tree",
+    "Random Forest",
+    "XGBoost",
+]
+
+
+class XGBoostWaterQualityClassifier(BaseEstimator, ClassifierMixin):
+    """Scikit-learn compatible wrapper around XGBClassifier for string-labeled multi-class targets.
+
+    Encodes string class targets to integer labels internally and inverts
+    predictions back to original string labels, ensuring seamless compatibility
+    with scikit-learn metrics and consistent interface across all baseline models.
+    """
+
+    def __init__(
+        self,
+        random_state: int = 42,
+        eval_metric: str = "mlogloss",
+        n_estimators: int = 100,
+        max_depth: int = 6,
+        learning_rate: float = 0.3,
+        **kwargs,
+    ):
+        self.random_state = random_state
+        self.eval_metric = eval_metric
+        self.n_estimators = n_estimators
+        self.max_depth = max_depth
+        self.learning_rate = learning_rate
+        self.kwargs = kwargs
+        self.model_: Optional[XGBClassifier] = None
+        self.label_encoder_: Optional[LabelEncoder] = None
+        self.classes_: Optional[np.ndarray] = None
+        self.training_time_: Optional[float] = None
+
+    def fit(self, X: Union[pd.DataFrame, np.ndarray], y: Union[pd.Series, np.ndarray]):
+        self.label_encoder_ = LabelEncoder()
+        y_encoded = self.label_encoder_.fit_transform(np.asarray(y))
+        self.classes_ = self.label_encoder_.classes_
+
+        self.model_ = XGBClassifier(
+            random_state=self.random_state,
+            eval_metric=self.eval_metric,
+            n_estimators=self.n_estimators,
+            max_depth=self.max_depth,
+            learning_rate=self.learning_rate,
+            **self.kwargs,
+        )
+        self.model_.fit(X, y_encoded)
+        return self
+
+    def predict(self, X: Union[pd.DataFrame, np.ndarray]) -> np.ndarray:
+        if self.model_ is None or self.label_encoder_ is None:
+            raise RuntimeError("Classifier has not been fitted yet.")
+        preds_enc = self.model_.predict(X)
+        return self.label_encoder_.inverse_transform(preds_enc)
+
+    def predict_proba(self, X: Union[pd.DataFrame, np.ndarray]) -> np.ndarray:
+        if self.model_ is None:
+            raise RuntimeError("Classifier has not been fitted yet.")
+        return self.model_.predict_proba(X)
+
+
+def train_baseline_models(
+    X_train: Union[pd.DataFrame, np.ndarray],
+    y_train: Union[pd.Series, np.ndarray],
+    random_seed: Optional[int] = None,
+    save_dir: Optional[Union[str, Path]] = None,
+    save_models: bool = True,
+    X_test_sanity: Optional[Union[pd.DataFrame, np.ndarray]] = None,
+) -> Dict[str, BaseEstimator]:
+    """Train 4 baseline classifiers under an identical experimental protocol.
+
+    Milestone 5.1: Baseline Model Training
+    Candidates:
+    - Logistic Regression (class_weight='balanced', max_iter=1000)
+    - Decision Tree (class_weight='balanced')
+    - Random Forest (class_weight='balanced')
+    - XGBoost (wrapped with string-label decoding, eval_metric='mlogloss')
+
+    All models consume the exact same preprocessed X_train.
+    Saves intermediate models to models/experiments/ (gitignored).
+
+    Parameters
+    ----------
+    X_train : pd.DataFrame or np.ndarray
+        Preprocessed feature matrix produced by the M4.2 preprocessing pipeline.
+    y_train : pd.Series or np.ndarray
+        Target labels (wqi_class).
+    random_seed : int, optional
+        Random seed for model reproducibility. Defaults to config random_seed (42).
+    save_dir : str or Path, optional
+        Directory to save intermediate model checkpoints. Defaults to models/experiments.
+    save_models : bool, default True
+        Whether to serialize the trained models to save_dir.
+    X_test_sanity : pd.DataFrame or np.ndarray, optional
+        Sample test rows (e.g. 5 rows of X_test) to perform an immediate prediction
+        sanity check on each fitted model.
+
+    Returns
+    -------
+    dict[str, BaseEstimator]
+        Mapping from model name to fitted estimator object.
+    """
+    if len(X_train) != len(y_train):
+        raise ValueError(
+            f"Length mismatch: X_train has {len(X_train)} rows but y_train has {len(y_train)} rows."
+        )
+
+    cfg = _load_config()
+    seed = random_seed if random_seed is not None else int(cfg.get("random_seed", 42))
+
+    experiments_dir = (
+        Path(save_dir) if save_dir is not None
+        else _REPO_ROOT / "models" / "experiments"
+    )
+
+    logger.info("===== M5.1 BASELINE MODEL TRAINING START =====")
+    logger.info("  Training samples: %d | Random seed: %d", len(X_train), seed)
+
+    # 1. Instantiate the 4 candidates with uniform seed & balanced class weights
+    model_factories = {
+        "Logistic Regression": lambda: LogisticRegression(
+            class_weight="balanced",
+            random_state=seed,
+            max_iter=1000,
+        ),
+        "Decision Tree": lambda: DecisionTreeClassifier(
+            class_weight="balanced",
+            random_state=seed,
+        ),
+        "Random Forest": lambda: RandomForestClassifier(
+            class_weight="balanced",
+            random_state=seed,
+        ),
+        "XGBoost": lambda: XGBoostWaterQualityClassifier(
+            random_state=seed,
+            eval_metric="mlogloss",
+        ),
+    }
+
+    fitted_models: Dict[str, BaseEstimator] = {}
+
+    if save_models:
+        experiments_dir.mkdir(parents=True, exist_ok=True)
+
+    for name, factory in model_factories.items():
+        model = factory()
+        t0 = time.perf_counter()
+        model.fit(X_train, y_train)
+        elapsed = time.perf_counter() - t0
+        model.training_time_ = elapsed
+
+        logger.info("  [M5.1] %-20s fitted in %.4f seconds", name, elapsed)
+
+        # Sanity check prediction on test rows or training rows
+        sanity_data = X_test_sanity if X_test_sanity is not None else X_train[:5]
+        preds = model.predict(sanity_data)
+        if len(preds) != len(sanity_data):
+            raise RuntimeError(
+                f"Prediction sanity check failed for {name}: expected {len(sanity_data)} predictions, got {len(preds)}"
+            )
+
+        if save_models:
+            slug = name.lower().replace(" ", "_")
+            out_file = experiments_dir / f"baseline_{slug}.pkl"
+            joblib.dump(model, out_file)
+            logger.info("  Saved checkpoint: %s", out_file)
+
+        fitted_models[name] = model
+
+    logger.info("===== M5.1 BASELINE MODEL TRAINING COMPLETE (4/4 models trained) =====")
+    return fitted_models
+
+
+# ---------------------------------------------------------------------------
 # CLI entry point
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
@@ -574,3 +760,15 @@ if __name__ == "__main__":
     for k, v in result.leakage_audit.items():
         status = "PASS" if v.startswith("PASS") else "FAIL"
         print(f"    [{status}] {k}")
+
+    print("\n[M5.1 Baseline Model Training]")
+    models = train_baseline_models(
+        result.X_train_processed,
+        result.y_train,
+        random_seed=result.random_seed,
+        X_test_sanity=result.X_test_processed[:5],
+    )
+    print(f"  Trained {len(models)} models: {list(models.keys())}")
+    for name, m in models.items():
+        print(f"    - {name}: training time = {getattr(m, 'training_time_', 0.0):.4f}s")
+
