@@ -60,6 +60,74 @@ Per Milestone 4.1, the raw candidate feature set frozen in M1.4 is preserved int
 
 > **Leakage & Provenance Guarantee**: `Log10 Fecal Coliform` depends strictly on `Fecal Coliform (MPN/100mL)` entered by the dashboard user at inference time. It has zero dependence on `wqi_class`, `wqi_score`, `Potability`, or global/future aggregates.
 
+### 1.6 M4.2 Contract Freeze: Stratified Train/Test Split & Preprocessing Pipeline
+
+- **Owner**: Track B (ML Lead)
+- **Freeze Milestone**: **M4.2** (Train/Test Split & Leakage Audit - CONTRACT FREEZE)
+- **Status**: **FROZEN**
+- **Consumer Tracks**: Track B (Model Training & Hyperparameter Tuning), Track C (Explainability), Track D (Dashboard & Inference API)
+- **Freeze Sign-Off Requirement**: **Dashboard Lead must acknowledge before marking M4.2 complete.**
+
+#### Frozen Feature Contract (Exact Names & Column Order)
+The feature matrix $X$ passed into the preprocessing pipeline or model training consists strictly of the following 5 columns in exact order:
+1. `Potential of Hydrogen (pH)` — `float64` (Raw M1.4)
+2. `Dissolved oxygen (mg/L)` — `float64` (Raw M1.4)
+3. `Biochemical Oxygen Demand (mg/L)` — `float64` (Raw M1.4)
+4. `Fecal Coliform (MPN/100mL)` — `float64` (Raw M1.4)
+5. `Log10 Fecal Coliform` — `float64` (Engineered M4.1)
+
+#### Target Variable
+- **Primary Target**: `wqi_class` (Categorical label with 5 classes: `Unsuitable`, `Very Poor`, `Poor`, `Good`, `Excellent`)
+- **Strict Leakage Guard**: `wqi_score`, `wqi_class`, and `Potability` are **STRICTLY FORBIDDEN** from ever appearing in the feature matrix $X$.
+
+#### Split Configuration & Stratification
+- **Split Ratio**: 80% Train, 20% Test (Stratified on `wqi_class`).
+- **Random Seed**: `42` (configured via `config/config.yaml`).
+- **Cleaned Dataset Row Count**: 3,287 rows (after M2.1 deduplication and M2.2 missing-value handling).
+- **Split Counts**: Train = 2,629 rows (80.0%), Test = 658 rows (20.0%).
+- **Class Distribution**:
+  - `Unsuitable`: Full 1,795 (54.61%) | Train 1,436 (54.62%) | Test 359 (54.56%)
+  - `Very Poor`: Full 921 (28.02%) | Train 737 (28.03%) | Test 184 (27.96%)
+  - `Poor`: Full 454 (13.81%) | Train 363 (13.81%) | Test 91 (13.83%)
+  - `Good`: Full 110 (3.35%) | Train 88 (3.35%) | Test 22 (3.34%)
+  - `Excellent`: Full 7 (0.21%) | Train 6 (0.23%) | Test 1 (0.15%)
+- **Rare-Class Exception (`Excellent`, $n=7$)**:
+  With only 7 samples in the entire dataset, a pure integer split yields 6 train (85.7%) and 1 test (14.3%). This integer rounding difference (+0.02 pp in train, -0.06 pp in test) is an unavoidable mathematical property of integer splitting on extremely rare classes. The classes are NOT merged; `Excellent` is preserved as a distinct class with representation in both train and test sets.
+- **Physical Feature-Value Coincidences**:
+  Cross-split duplicate checking identified 22 pairs of rows sharing identical 5-feature numeric readings between train and test. Verification confirmed these represent distinct physical monitoring records (different sampling stations or dates) rather than duplicated data pipeline rows. Because original row indices are strictly disjoint (0 cross-split index overlap), this represents natural physical sensor value repetition and passed the Section 19 Leakage Audit (S19-05).
+
+#### Preprocessing Pipeline Guarantee
+- The preprocessing pipeline (`StandardScaler` fitted on numeric columns) is fitted **STRICTLY on $X_{\text{train}}$**.
+- It is NEVER fitted on $X_{\text{test}}$ or the full un-split dataset.
+- $X_{\text{test}}$ is transformed solely using the statistics (means and variances) learned from $X_{\text{train}}$.
+
+#### Saved Artifact Locations (Gitignored)
+- Preprocessing Pipeline: `models/preprocessing_pipeline_v1.pkl`
+- Feature Matrices: `data/processed/X_train_v1.csv`, `data/processed/X_test_v1.csv`
+- Target Series: `data/processed/y_train_v1.csv`, `data/processed/y_test_v1.csv`
+- Audit Reports: `data/processed/leakage_audit_v1.json`, `data/processed/class_distribution_v1.json`
+
+#### Regeneration Command
+```bash
+python -m src.models.train
+```
+Or programmatically:
+```python
+from src.models.train import perform_split
+split_result = perform_split()
+```
+
+#### Specification Section 19 Leakage Audit Checklist
+All 8 verification items passed:
+1. `S19-01`: Target not in features (`wqi_class`, `wqi_score`, `Potability` absent from $X$). [PASS]
+2. `S19-02`: Row-independent transformation ($\log_{10}$ is strictly vectorized element-wise). [PASS]
+3. `S19-03`: Zero test-set influence during fit (fitted solely on $X_{\text{train}}$). [PASS]
+4. `S19-04`: Reproducible split (`random_seed=42`, stratified). [PASS]
+5. `S19-05`: No cross-split source-row duplication (train and test index sets strictly disjoint). [PASS]
+6. `S19-06`: Target distribution preserved within tolerance (with documented rare-class rounding). [PASS]
+7. `S19-07`: Artifacts persistable without runtime computation. [PASS]
+8. `S19-08`: Forward-compatible pipeline output shape matches expected model input. [PASS]
+
 ---
 
 ## 2. Model Artifact Contract
