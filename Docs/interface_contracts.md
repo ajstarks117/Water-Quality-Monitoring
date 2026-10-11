@@ -65,8 +65,8 @@ Per Milestone 4.1, the raw candidate feature set frozen in M1.4 is preserved int
 - **Owner**: Track B (ML Lead)
 - **Freeze Milestone**: **M4.2** (Train/Test Split & Leakage Audit - CONTRACT FREEZE)
 - **Status**: **FROZEN**
-- **Consumer Tracks**: Track B (Model Training & Hyperparameter Tuning), Track C (Explainability), Track D (Dashboard & Inference API)
-- **Freeze Sign-Off Requirement**: **Dashboard Lead must acknowledge before marking M4.2 complete.**
+- **Cross-Track Binding**: Documented and frozen interface binding Track D (Dashboard & Inference API). Available for consumption when Milestone 9.2 is implemented in Phase 9.
+- **Milestone 4.2 Status**: **FROZEN & FORMALLY CLOSED** (Technical verification complete; all 4 tests pass; 8-item leakage audit clean).
 
 #### Frozen Feature Contract (Exact Names & Column Order)
 The feature matrix $X$ passed into the preprocessing pipeline or model training consists strictly of the following 5 columns in exact order:
