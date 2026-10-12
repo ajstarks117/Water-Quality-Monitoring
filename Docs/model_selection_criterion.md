@@ -93,3 +93,65 @@ If two candidate models achieve Macro F1 within $\pm 0.015$:
 1. **Critical Pollution Recall**: Higher average recall across `Unsuitable` and `Very Poor`.
 2. **Explainability**: Support for exact/fast TreeSHAP (e.g. Random Forest, XGBoost) over kernel approximations.
 3. **Inference Latency**: Lower per-sample prediction time on standard CPU hardware.
+
+---
+
+## 8. Milestone 6.1: Class Imbalance Handling — Decision Record
+
+**Status**: DECIDED — `class_weight='balanced'` retained; no external resampling applied.  
+**Experiment Date**: Phase 6 (M6.1)  
+**Config Setting**: `resampling_method: "none"` in `config/config.yaml`  
+
+### 8.1 Imbalance Severity Assessment
+
+The CPCB labeled dataset exhibits **extreme class imbalance** (re-confirmed from M3.1/M5.2):
+
+| Class | Train Count | Train % | Imbalance Ratio vs Majority |
+|:---|---:|---:|---:|
+| Unsuitable | 1,436 | 54.6% | 1.0x (majority) |
+| Very Poor | 735 | 28.0% | 1.95x |
+| Poor | 364 | 13.8% | 3.95x |
+| Good | 88 | 3.4% | 16.3x |
+| Excellent | 6 | 0.2% | 239.3x |
+
+The `Excellent` class (6 training samples) is critically underrepresented.
+
+### 8.2 Experimental Comparison
+
+Three imbalance-handling strategies were compared across all 4 candidate models, evaluated on the **original untouched test set** ($n = 658$):
+
+#### Macro F1 Comparison (Primary Selection Metric)
+
+| Model | Baseline (`class_weight='balanced'`) | SMOTE | RandomOverSampler |
+|:---|---:|---:|---:|
+| **Decision Tree** | **0.9067** | 0.9007 | 0.9015 |
+| Random Forest | 0.8417 | 0.7121 | 0.8324 |
+| XGBoost | 0.7237 | 0.7017 | 0.8544 |
+| Logistic Regression | 0.5648 | 0.5763 | 0.5729 |
+
+#### Per-Class Recall for Minority Classes (Baseline `class_weight='balanced'`)
+
+| Model | Good (3.4%) | Excellent (0.2%) |
+|:---|---:|---:|
+| Decision Tree | 0.727 | 1.000 |
+| Random Forest | 0.591 | 1.000 |
+| XGBoost | 0.682 | 0.000 |
+| Logistic Regression | 0.636 | 1.000 |
+
+### 8.3 Decision & Justification
+
+**Decision**: Retain `class_weight='balanced'` without external resampling (SMOTE/ROS).
+
+**Rationale**:
+1. **Best overall Macro F1**: The baseline Decision Tree with `class_weight='balanced'` achieved the highest Macro F1 (0.9067) across all 12 model×strategy combinations.
+2. **SMOTE degraded the best model**: SMOTE reduced Decision Tree Macro F1 from 0.9067 → 0.9007 and severely harmed Random Forest (0.8417 → 0.7121).
+3. **ROS marginal**: RandomOverSampler produced slight degradation for Decision Tree (0.9067 → 0.9015) while improving XGBoost (0.7237 → 0.8544), but the overall best model is still unimproved.
+4. **Excellent class coverage**: The baseline Decision Tree already achieves perfect recall (1.000) on the `Excellent` class despite having only 6 training samples — an already strong result that resampling cannot improve.
+5. **Simplicity**: `class_weight='balanced'` is parameter-free, adds no synthetic data artifacts, and has zero risk of introducing train/test contamination.
+
+### 8.4 Leakage Audit Confirmation (TC-6.1-01)
+
+- `resample_training_data()` accepts only `X_train` and `y_train` as inputs.
+- The function is called **inside** `train_baseline_models()` **after** the M4.2 split.
+- The test set (`X_test`, `y_test`) is never passed to or modified by the resampling function.
+- Full experiment results saved to: `reports/m61_imbalance_experiment.json`
