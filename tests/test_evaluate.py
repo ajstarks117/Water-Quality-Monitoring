@@ -134,7 +134,9 @@ def test_tc_5_2_02_comparison_table_completeness(baseline_eval_artifacts):
     # Also check the repository artifact
     assert DEFAULT_COMPARISON_CSV.exists(), "Repository artifact reports/model_comparison.csv missing"
     repo_df = pd.read_csv(DEFAULT_COMPARISON_CSV)
-    assert len(repo_df) == 4
+    assert len(repo_df) >= 4, f"Expected at least 4 baseline models, found {len(repo_df)}"
+    for name in BASELINE_MODEL_NAMES:
+        assert name in repo_df["Model"].values, f"Baseline model '{name}' missing from comparison table"
 
 
 def test_tc_5_2_03_confusion_matrices_generated(baseline_eval_artifacts):

@@ -54,3 +54,7 @@ test_size: 0.2
 # Model and artifact output paths
 model_output_path: "models/best_model.pkl"
 shap_output_path: "reports/figures/shap_summary.png"
+
+# Class imbalance handling (Milestone 6.1)
+# Options: "none" (default: class_weight='balanced'), "smote", "random_oversampler"
+resampling_method: "none"

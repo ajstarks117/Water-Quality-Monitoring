@@ -155,3 +155,55 @@ Three imbalance-handling strategies were compared across all 4 candidate models,
 - The function is called **inside** `train_baseline_models()` **after** the M4.2 split.
 - The test set (`X_test`, `y_test`) is never passed to or modified by the resampling function.
 - Full experiment results saved to: `reports/m61_imbalance_experiment.json`
+
+---
+
+## 9. Milestone 6.3: Final Model Selection & Freeze — Selection Record
+
+**Status**: FROZEN & CONTRACT LOCKED  
+**Selected Model**: Decision Tree (`class_weight='balanced'`, `random_state=42`)  
+**Frozen Artifact Path**: `models/best_model.pkl`  
+**Evaluation Dataset**: Untouched Test Set ($n = 658$, Stratified 20% split)  
+**Specification Reference**: Sections 23, 26, 27, 45  
+
+### 9.1 Final Model Comparison Summary
+
+Per the pre-declared evaluation protocol, all baseline and tuned candidate models were evaluated on the untouched test split ($n = 658$). Metric results from `reports/model_comparison.csv`:
+
+| Rank | Model | Macro F1 (Primary) | Accuracy | Macro Precision | Macro Recall | Weighted F1 | Training Time (s) |
+|:---:|:---|:---:|:---:|:---:|:---:|:---:|:---:|
+| **1** | **Decision Tree (Baseline)** | **0.9067** | 0.9377 | 0.9121 | 0.9022 | 0.9375 | **0.0139** |
+| 2 | Random Forest (Baseline) | 0.8417 | 0.9544 | 0.8365 | 0.8908 | 0.9534 | 0.2882 |
+| 3 | Decision Tree (Tuned) | 0.8276 | 0.9362 | 0.7915 | 0.8972 | 0.9366 | 16.0329 |
+| 4 | Random Forest (Tuned) | 0.8007 | 0.9407 | 0.7660 | 0.9021 | 0.9417 | 5.6293 |
+| 5 | XGBoost (Baseline) | 0.7237 | 0.9605 | 0.7393 | 0.7112 | 0.9597 | 2.2467 |
+| 6 | Logistic Regression (Baseline) | 0.5648 | 0.7872 | 0.5710 | 0.7635 | 0.8135 | 0.0595 |
+
+### 9.2 Application of Pre-Declared Selection Criterion
+
+The selection strictly applies the metric hierarchy defined in Section 2 without alteration:
+
+1. **Primary Metric (Macro F1)**:
+   - Baseline Decision Tree achieves **Macro F1 = 0.9067**, leading all candidates by a substantial margin (+0.0650 over runner-up Random Forest, +0.0791 over Tuned Decision Tree, +0.1830 over XGBoost).
+   - Macro F1 treats all five water quality categories equally ($0.20$ weight per class), preventing the severe 54.6% majority class (`Unsuitable`) from masking poor minority detection.
+
+2. **Runner-Up Rejection Rationale (Random Forest)**:
+   - **Higher Accuracy is Disqualified**: While Baseline Random Forest achieved higher overall accuracy (0.9544 vs 0.9377), Section 5 of this document explicitly states:
+     > *"Accuracy alone MUST NEVER be used as the selection criterion. A model with higher overall accuracy but inferior Macro F1 will be rejected in favor of the model with superior Macro F1."*
+   - **Minority Class Recall Breakdown**: Random Forest achieves only $0.591$ recall on the `Good` class (vs $0.727$ for Decision Tree). The ensemble's majority voting tends to absorb ambiguous samples near decision boundaries into the majority `Unsuitable` or `Very Poor` classes, suppressing sensitivity to potable and transitioning water categories.
+   - **Primary Metric Deficit**: Random Forest's Macro F1 (0.8417) falls $0.0650$ below Decision Tree, exceeding the tie-breaker threshold ($\pm 0.015$).
+
+3. **Hyperparameter Tuning Findings (Why Baseline Prevailed Over Tuned)**:
+   - In M6.2, both Decision Tree and Random Forest were tuned via RandomizedSearchCV (25 iterations, 5-fold cross-validation on the training set).
+   - Tuning regularized tree depth and leaf size (`max_depth`, `min_samples_leaf`), which caused the Decision Tree's test Macro F1 to drop from $0.9067 \to 0.8276$. For this dataset, the default unconstrained depth with `class_weight='balanced'` allows the tree to create pure leaf partitions for the extremely rare `Excellent` ($n=6$) and `Good` ($n=88$) classes.
+   - Adhering strictly to anti-cherry-picking rules (Section 1), the baseline model is retained because its pre-declared Macro F1 is superior.
+
+4. **Secondary Criteria & Operational Feasibility**:
+   - **Critical Pollution Recall**: Decision Tree achieves high recall on severe pollution classes ($0.975$ on `Unsuitable`, $0.908$ on `Very Poor`).
+   - **Pristine Class Recall**: Perfect recall ($1.000$) on the critical rare class `Excellent`.
+   - **Compute Efficiency**: Training time is $0.0139$ seconds (fastest model), and single-sample inference latency is under $0.1$ milliseconds.
+   - **Explainability Readiness**: As a single decision tree, the model provides 100% exact, deterministic decision paths and rapid TreeSHAP explainability for Phase 7.
+
+### 9.3 Frozen Packaging
+The winning Decision Tree is packaged with the M4.2 fitted preprocessing pipeline and M4.1 feature engineer into `models/best_model.pkl`, exposing a combined `.predict()` and `.predict_proba()` interface over the 4 raw candidate features.
+

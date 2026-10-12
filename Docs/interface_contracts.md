@@ -133,31 +133,81 @@ All 8 verification items passed:
 ## 2. Model Artifact Contract
 
 - **Owner**: Track B (ML Models)
-- **Freeze Milestone**: **M6.3** (Best Model Freezing & Packaging)
-- **Consumer Tracks**: Track C (Explainability), Track D (Dashboard & Inference API)
-- **Location**: `models/best_model.pkl` (referenced via `config/config.yaml`)
+- **Freeze Milestone**: **M6.3** (Final Model Selection, Freeze & Pipeline Artifact - CONTRACT FREEZE)
+- **Status**: **FROZEN & CONTRACT LOCKED**
+- **Date Frozen**: 2026-10-12
+- **Consumer Tracks**: Track C (Explainability - Phase 7), Track D (Dashboard & Inference API - Milestone 9.3)
+- **Location**: `models/best_model.pkl` (referenced via `config/config.yaml` `model_output_path`)
+- **Version**: `v1.0.0-frozen`
+- **Artifact SHA-256 Hash**: `c1c42b4c625e1fda25852ab63c54e94c9caa842f17d67d022dfd8796e529c812`
+- **Selected Model**: `DecisionTreeClassifier(class_weight='balanced', random_state=42)` (Macro F1 = 0.9067 on untouched test split)
+- **Downstream Unblock Notification**: Phase 7 (SHAP Explainability) and Milestone 9.3 (Dashboard Real Prediction Integration) are **UNBLOCKED**.
+
+### Artifact Architecture (End-to-End Pipeline)
+
+The serialized artifact is a single, self-contained `sklearn.pipeline.Pipeline` combining:
+1. `feature_engineering`: `WaterQualityFeatureEngineer(include_raw_features=True)`
+   - Computes $\text{Log}_{10}(\text{Fecal Coliform})$ dynamically from raw user input without external lookups.
+   - Preserves raw features, outputting the exact 5-column extended schema.
+2. `preprocessor`: `ColumnTransformer` (fitted on $X_{\text{train}}$ in M4.2)
+   - Median imputation and standard scaling (`StandardScaler`).
+3. `classifier`: `DecisionTreeClassifier(class_weight='balanced', random_state=42)`
+   - Multi-class tree classifier trained on scaled $X_{\text{train}}$.
+
+```
+Raw Input DataFrame (4 candidate features)
+   │
+   ▼
+[Step 1: feature_engineering] ──> Appends 'Log10 Fecal Coliform' (5 columns)
+   │
+   ▼
+[Step 2: preprocessor]        ──> StandardScaler & Imputation (fitted on X_train only)
+   │
+   ▼
+[Step 3: classifier]          ──> DecisionTreeClassifier (class_weight='balanced')
+   │
+   ▼
+Class Prediction (.predict) or Class Probabilities (.predict_proba)
+```
 
 ### Artifact Interface Guarantees
-The serialized object loaded via `joblib.load("models/best_model.pkl")` must be a scikit-learn compatible `Pipeline` or estimator exposing:
 
-1. **Multi-Class & Binary Prediction**:
+The serialized object loaded via `joblib.load("models/best_model.pkl")` exposes:
+
+1. **Multi-Class Prediction**:
    ```python
-   y_pred = model.predict(X)
-   # Returns: np.ndarray of shape (n_samples,) with class labels or binary integers
+   y_pred = model.predict(raw_input_df)
+   # Returns: np.ndarray of shape (n_samples,) with dtype='<U10'
+   # Class values in: ['Excellent', 'Good', 'Poor', 'Unsuitable', 'Very Poor']
    ```
+
 2. **Probability Estimation**:
    ```python
-   y_prob = model.predict_proba(X)
-   # Returns: np.ndarray of shape (n_samples, n_classes) with normalized probabilities
+   y_prob = model.predict_proba(raw_input_df)
+   # Returns: np.ndarray of shape (n_samples, 5) with normalized probabilities summing to 1.0
+   # Classes corresponding to model.classes_: ['Excellent', 'Good', 'Poor', 'Unsuitable', 'Very Poor']
    ```
-3. **Input Format**:
-   - `X`: `pandas.DataFrame` or `numpy.ndarray` containing candidate feature columns matching the exact names and dtypes defined in the Cleaned Data Contract.
-   - Built-in preprocessing: The pipeline must encapsulate any required scaling (e.g. `StandardScaler`) and imputation internally so raw inputs can be passed directly to `.predict()`.
+
+3. **Raw Input Schema Contract**:
+   Input must be a `pandas.DataFrame` (or dict convertible to DataFrame) containing the 4 frozen candidate feature columns:
+   - `Potential of Hydrogen (pH)`: `float64`
+   - `Dissolved oxygen (mg/L)`: `float64`
+   - `Biochemical Oxygen Demand (mg/L)`: `float64`
+   - `Fecal Coliform (MPN/100mL)`: `float64`
+   - **No manual preprocessing or scaling required** by caller.
+   - If any candidate feature column is missing, a clear `ValueError` specifying the missing column is raised.
+
+4. **Inference Wrapper Module**:
+   `src/models/predict.py` provides convenience functions:
+   - `load_model(model_path=None) -> Pipeline`
+   - `predict(data, model=None) -> np.ndarray`
+   - `predict_proba(data, model=None) -> np.ndarray`
+   - `compute_artifact_hash(artifact_path) -> str`
 
 ---
 
 ## 3. Parallel Development & Mocking Strategy
 
-To prevent Tracks C and D from being blocked:
-- **Interim Dataset Ready**: Tracks B, C, and D can directly consume `data/interim/cpcb_labeled.csv`.
-- **Mock Model**: Tracks C and D can use a baseline model (e.g. `RandomForestClassifier` or `LogisticRegression`) serialized at `models/mock_model.pkl` until M6.3 is completed.
+- **M6.3 CONTRACT FREEZE COMPLETE**: The real model artifact `models/best_model.pkl` is now frozen and available.
+- Mock model usage is deprecated; Track C (SHAP) and Track D (Dashboard M9.3) now consume `models/best_model.pkl` directly.
+
