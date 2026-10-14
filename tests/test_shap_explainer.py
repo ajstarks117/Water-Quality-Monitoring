@@ -18,10 +18,13 @@ from sklearn.tree import DecisionTreeClassifier
 
 from src.features.engineering import FINAL_EXTENDED_FEATURE_COLUMNS
 from src.explainability.shap_explainer import (
+    CAUSATION_CAVEAT_STATEMENT,
     compare_shap_with_eda,
     explain_samples,
+    generate_shap_local_plot,
     generate_shap_summary_plot,
     get_global_importance,
+    get_local_explanation,
     get_tree_classifier,
     get_tree_explainer,
     load_frozen_pipeline,
@@ -32,6 +35,7 @@ from src.models.predict import FROZEN_RAW_FEATURE_COLUMNS
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _CONTRACT_PATH = _REPO_ROOT / "Docs" / "interface_contracts.md"
 _SUMMARY_PLOT_PATH = _REPO_ROOT / "reports" / "figures" / "shap_summary.png"
+_LOCAL_PLOT_PATH = _REPO_ROOT / "reports" / "figures" / "shap_local_example.png"
 
 
 @pytest.fixture(scope="module")
@@ -237,3 +241,210 @@ def test_tc_7_1_03_summary_plot_generation(tmp_path):
     # Also verify repo default plot exists
     assert _SUMMARY_PLOT_PATH.exists(), f"Repository plot {_SUMMARY_PLOT_PATH} missing"
     assert _SUMMARY_PLOT_PATH.stat().st_size > 5000
+
+
+# ===========================================================================
+# Milestone 7.2: Local Explanation Test Suite
+# ===========================================================================
+
+# ===========================================================================
+# TC-7.2-01: Local explanation computed for a single sample
+# ===========================================================================
+def test_tc_7_2_01_local_explanation_structure_and_additive_property(frozen_model, raw_test_samples):
+    """
+    TC-7.2-01: Call get_local_explanation on one raw sample.
+    Expected: Returns per-feature contribution values that sum consistently
+    with the prediction (within SHAP's additive property tolerance).
+    """
+    single_sample = raw_test_samples.iloc[[0]]
+    explanation = get_local_explanation(model=frozen_model, single_input_row=single_sample)
+
+    assert isinstance(explanation, dict), "Local explanation must be a dictionary"
+
+    # Verify essential fields
+    required_keys = [
+        "predicted_class",
+        "predicted_probability",
+        "base_value",
+        "feature_contributions",
+        "contributions_sum",
+        "additive_check_passed",
+        "class_probabilities",
+        "per_class_contributions",
+        "causation_caveat",
+    ]
+    for key in required_keys:
+        assert key in explanation, f"Missing required key '{key}' in local explanation"
+
+    # Additive property check
+    assert explanation["additive_check_passed"] is True, (
+        f"Additive property check failed: base_value ({explanation['base_value']}) + "
+        f"contributions_sum ({explanation['contributions_sum']}) != "
+        f"predicted_probability ({explanation['predicted_probability']})"
+    )
+    expected_prob = explanation["base_value"] + explanation["contributions_sum"]
+    np.testing.assert_allclose(
+        expected_prob,
+        explanation["predicted_probability"],
+        rtol=1e-5,
+        atol=1e-5,
+        err_msg="Base value + sum of contributions must equal predicted probability",
+    )
+
+    # Verify feature contributions list
+    contributions = explanation["feature_contributions"]
+    assert len(contributions) == 5, f"Expected 5 feature contributions, got {len(contributions)}"
+
+    # Check rank order
+    ranks = [c["rank"] for c in contributions]
+    assert ranks == [1, 2, 3, 4, 5], "Contributions must be ranked 1 through 5"
+
+    # Check each contribution item
+    for item in contributions:
+        assert "feature" in item
+        assert "feature_value" in item
+        assert "contribution" in item
+        assert "absolute_contribution" in item
+        assert "direction" in item
+        assert item["direction"] in ["increases_probability", "decreases_probability", "neutral"]
+        assert item["absolute_contribution"] >= 0.0
+
+    # Test with single dict input
+    dict_sample = {
+        "Potential of Hydrogen (pH)": 7.4,
+        "Dissolved oxygen (mg/L)": 6.5,
+        "Biochemical Oxygen Demand (mg/L)": 2.0,
+        "Fecal Coliform (MPN/100mL)": 100.0,
+    }
+    exp_dict = get_local_explanation(model=frozen_model, single_input_row=dict_sample)
+    assert exp_dict["additive_check_passed"] is True
+    assert len(exp_dict["feature_contributions"]) == 5
+
+
+# ===========================================================================
+# TC-7.2-02: Performance target met
+# ===========================================================================
+def test_tc_7_2_02_performance_target_met(frozen_model, raw_test_samples):
+    """
+    TC-7.2-02: Time 20 consecutive calls to get_local_explanation.
+    Expected: Average latency is well under the agreed 1-2 second budget per call.
+    """
+    import time
+
+    single_sample = raw_test_samples.iloc[[0]]
+    durations = []
+
+    # Warm-up call
+    _ = get_local_explanation(model=frozen_model, single_input_row=single_sample)
+
+    for _ in range(20):
+        t0 = time.perf_counter()
+        _ = get_local_explanation(model=frozen_model, single_input_row=single_sample)
+        durations.append(time.perf_counter() - t0)
+
+    avg_time = sum(durations) / len(durations)
+    max_time = max(durations)
+
+    # Dashboard SLA target: under 1.0 second
+    assert avg_time < 1.0, f"Average explanation time {avg_time:.4f}s exceeds 1.0s budget"
+    assert max_time < 2.0, f"Max explanation time {max_time:.4f}s exceeds 2.0s budget"
+
+
+# ===========================================================================
+# TC-7.2-03: Negative: malformed single input
+# ===========================================================================
+def test_tc_7_2_03_negative_missing_features(frozen_model):
+    """
+    TC-7.2-03: Call with a row missing required features.
+    Expected: Raises a clear, specific ValueError rather than a silent wrong answer.
+    """
+    # Missing 3 features
+    bad_sample_1 = {"Potential of Hydrogen (pH)": 7.5}
+    with pytest.raises(ValueError) as excinfo:
+        get_local_explanation(model=frozen_model, single_input_row=bad_sample_1)
+    err_str = str(excinfo.value)
+    assert "Missing required" in err_str or "Dissolved oxygen" in err_str
+
+    # Missing BOD
+    bad_sample_2 = pd.DataFrame(
+        [
+            {
+                "Potential of Hydrogen (pH)": 7.5,
+                "Dissolved oxygen (mg/L)": 6.0,
+                "Fecal Coliform (MPN/100mL)": 150.0,
+            }
+        ]
+    )
+    with pytest.raises(ValueError) as excinfo2:
+        get_local_explanation(model=frozen_model, single_input_row=bad_sample_2)
+    assert "Biochemical Oxygen Demand (mg/L)" in str(excinfo2.value) or "Missing" in str(excinfo2.value)
+
+    # Empty input
+    with pytest.raises(ValueError):
+        get_local_explanation(model=frozen_model, single_input_row=pd.DataFrame())
+
+    # None input
+    with pytest.raises(ValueError):
+        get_local_explanation(model=frozen_model, single_input_row=None)
+
+    # Multiple rows passed
+    multi_sample = pd.DataFrame([bad_sample_1, bad_sample_1])
+    with pytest.raises(ValueError) as excinfo_multi:
+        get_local_explanation(model=frozen_model, single_input_row=multi_sample)
+    assert "exactly 1" in str(excinfo_multi.value)
+
+
+# ===========================================================================
+# TC-7.2-04: Output language check
+# ===========================================================================
+def test_tc_7_2_04_causation_safe_language(frozen_model, raw_test_samples):
+    """
+    TC-7.2-04: Review field names/labels in the returned structure.
+    Expected: No field or label claims causation; language is limited to 'contribution' / 'attribution'.
+    Enforces Specification Section 31 & 48 policy.
+    """
+    single_sample = raw_test_samples.iloc[[0]]
+    explanation = get_local_explanation(model=frozen_model, single_input_row=single_sample)
+
+    forbidden_terms = ["cause", "causal", "reason", "responsible"]
+
+    # Check top-level keys
+    for key in explanation.keys():
+        if key == "causation_caveat":
+            continue
+        for term in forbidden_terms:
+            assert term not in key.lower(), f"Forbidden causal term '{term}' found in key: '{key}'"
+
+    # Check feature contribution item keys and direction values
+    for item in explanation["feature_contributions"]:
+        for k, v in item.items():
+            for term in forbidden_terms:
+                assert term not in k.lower(), f"Forbidden causal term '{term}' found in item key: '{k}'"
+                if isinstance(v, str):
+                    assert term not in v.lower(), f"Forbidden causal term '{term}' found in value: '{v}'"
+
+    # Check causation caveat exists and explicitly states SHAP does not prove causation
+    caveat = explanation["causation_caveat"]
+    assert "does not prove" in caveat.lower() or "not prove" in caveat.lower()
+    assert "causation" in caveat.lower()
+    assert "attribution" in caveat.lower() or "contribution" in caveat.lower()
+
+
+def test_tc_7_2_local_plot_generation(tmp_path, frozen_model, raw_test_samples):
+    """Verify generate_shap_local_plot generates a valid local explanation image."""
+    single_sample = raw_test_samples.iloc[[0]]
+    temp_plot = tmp_path / "temp_local_plot.png"
+    out_path = generate_shap_local_plot(
+        model=frozen_model,
+        single_input_row=single_sample,
+        output_path=temp_plot,
+        show=False,
+    )
+
+    assert out_path.exists(), f"Local plot missing at {out_path}"
+    assert out_path.stat().st_size > 5000, "Local plot file is too small"
+
+    # Verify repository reference plot exists
+    assert _LOCAL_PLOT_PATH.exists(), f"Repository local plot {_LOCAL_PLOT_PATH} missing"
+    assert _LOCAL_PLOT_PATH.stat().st_size > 5000
+

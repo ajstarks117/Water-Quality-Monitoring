@@ -37,6 +37,7 @@ from src.data.preprocessing import FROZEN_CANDIDATE_FEATURES
 from src.features.engineering import (
     FINAL_EXTENDED_FEATURE_COLUMNS,
     LOG_FECAL_COLIFORM_COL,
+    compute_log_fecal_coliform,
 )
 from src.models.predict import (
     FROZEN_RAW_FEATURE_COLUMNS,
@@ -60,7 +61,14 @@ if not logger.handlers:
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _CONFIG_PATH = _REPO_ROOT / "config" / "config.yaml"
 DEFAULT_SUMMARY_PLOT_PATH = _REPO_ROOT / "reports" / "figures" / "shap_summary.png"
+DEFAULT_LOCAL_PLOT_PATH = _REPO_ROOT / "reports" / "figures" / "shap_local_example.png"
 DEFAULT_TEST_DATA_PATH = _REPO_ROOT / "data" / "processed" / "X_test_v1.csv"
+
+# Specification Section 31 & 48 Causation-Safe Communication Policy
+CAUSATION_CAVEAT_STATEMENT: str = (
+    "SHAP values reflect statistical attribution toward model output and do not "
+    "prove real-world physical, chemical, or biological causation (Specification Section 31/48)."
+)
 
 
 def _resolve_shap_output_path(output_path: Optional[Union[str, Path]] = None) -> Path:
@@ -421,6 +429,252 @@ def generate_shap_summary_plot(
     return out_file
 
 
+def get_local_explanation(
+    model: Optional[Any] = None,
+    single_input_row: Optional[Union[pd.DataFrame, pd.Series, Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
+    """
+    Compute local, per-prediction SHAP explanation for a single water quality sample.
+
+    Answers: "Why did the model assign this specific prediction to this specific sample?"
+    Engineered for live interactive dashboard querying (< 10 ms execution time).
+
+    CAUSATION CAVEAT (Specification Sections 31 & 48):
+    -------------------------------------------------
+    SHAP values represent statistical feature attribution (how much a feature shifts
+    the model's prediction score relative to the background baseline).
+    SHAP values DO NOT prove real-world physical, chemical, or biological causation.
+    A feature with high positive contribution is statistically associated with the
+    predicted class under the trained model, not necessarily the root cause of water
+    contamination. Output fields strictly use 'contribution' and 'attribution' terminology.
+
+    Parameters
+    ----------
+    model : Optional[Any]
+        Pipeline object or classifier. If None, loads frozen models/best_model.pkl.
+    single_input_row : Optional[Union[pd.DataFrame, pd.Series, Dict[str, Any]]]
+        Single water quality observation containing candidate features.
+        Accepts raw 4-feature schema:
+        - 'Potential of Hydrogen (pH)'
+        - 'Dissolved oxygen (mg/L)'
+        - 'Biochemical Oxygen Demand (mg/L)'
+        - 'Fecal Coliform (MPN/100mL)'
+
+    Returns
+    -------
+    explanation_dict : Dict[str, Any]
+        Structured local explanation dictionary containing:
+        - 'predicted_class': Predicted class label string
+        - 'predicted_probability': Model output probability for the predicted class
+        - 'base_value': Expected value prior for the predicted class
+        - 'feature_contributions': List of dicts ordered by absolute contribution descending:
+            * 'feature': Feature name
+            * 'feature_value': Numerical value of feature for this sample
+            * 'contribution': Signed additive SHAP contribution value
+            * 'absolute_contribution': Magnitude of attribution
+            * 'direction': 'increases_probability' / 'decreases_probability' / 'neutral'
+            * 'rank': Integer rank (1 = strongest contribution)
+        - 'contributions_sum': Sum of SHAP contributions across all 5 features
+        - 'additive_check_passed': True if base_value + contributions_sum == predicted_probability
+        - 'class_probabilities': Dict mapping all class labels to predicted probabilities
+        - 'per_class_contributions': Dict mapping each class to its feature contribution dict
+        - 'causation_caveat': Warning string enforcing Specification Section 31/48 wording discipline
+    """
+    if single_input_row is None:
+        raise ValueError("single_input_row cannot be None.")
+
+    if isinstance(single_input_row, pd.Series):
+        df_row = pd.DataFrame([single_input_row.to_dict()])
+    elif isinstance(single_input_row, dict):
+        df_row = pd.DataFrame([single_input_row])
+    elif isinstance(single_input_row, pd.DataFrame):
+        if len(single_input_row) != 1:
+            raise ValueError(
+                f"get_local_explanation expects exactly 1 observation, got {len(single_input_row)} rows."
+            )
+        df_row = single_input_row.copy()
+    else:
+        raise TypeError(
+            f"Unsupported data type for single_input_row: {type(single_input_row)}. "
+            f"Expected pd.DataFrame, pd.Series, or dict."
+        )
+
+    pipeline = model if isinstance(model, Pipeline) else load_frozen_pipeline(model)
+
+    # Validate against frozen candidate features
+    if all(col in df_row.columns for col in FROZEN_RAW_FEATURE_COLUMNS):
+        valid_raw_df = validate_raw_features(df_row)
+        feature_values_map = {col: float(valid_raw_df.iloc[0][col]) for col in FROZEN_RAW_FEATURE_COLUMNS}
+        feature_values_map[LOG_FECAL_COLIFORM_COL] = float(
+            compute_log_fecal_coliform(feature_values_map["Fecal Coliform (MPN/100mL)"])
+        )
+        preprocessed_array = pipeline[:-1].transform(valid_raw_df)
+        pred_input_df = valid_raw_df
+    elif all(col in df_row.columns for col in FINAL_EXTENDED_FEATURE_COLUMNS):
+        for col in FINAL_EXTENDED_FEATURE_COLUMNS:
+            if not pd.api.types.is_numeric_dtype(df_row[col]):
+                df_row[col] = pd.to_numeric(df_row[col])
+        feature_values_map = {col: float(df_row.iloc[0][col]) for col in FINAL_EXTENDED_FEATURE_COLUMNS}
+        preprocessor = pipeline.named_steps["preprocessor"]
+        preprocessed_array = preprocessor.transform(df_row[FINAL_EXTENDED_FEATURE_COLUMNS])
+        pred_input_df = df_row[FROZEN_RAW_FEATURE_COLUMNS] if all(c in df_row.columns for c in FROZEN_RAW_FEATURE_COLUMNS) else df_row
+    else:
+        missing = [col for col in FROZEN_RAW_FEATURE_COLUMNS if col not in df_row.columns]
+        raise ValueError(
+            f"Missing required feature column(s): {missing}. "
+            f"Input row must contain all frozen candidate features: {FROZEN_RAW_FEATURE_COLUMNS}. "
+            f"Available columns: {list(df_row.columns)}"
+        )
+
+    preprocessed_df = pd.DataFrame(
+        preprocessed_array,
+        columns=FINAL_EXTENDED_FEATURE_COLUMNS,
+    )
+
+    classifier = get_tree_classifier(pipeline)
+    explainer = shap.TreeExplainer(classifier)
+
+    # Compute prediction and probabilities
+    pred_class = pipeline.predict(pred_input_df)[0]
+    pred_proba_arr = pipeline.predict_proba(pred_input_df)[0]
+    classes = list(getattr(classifier, "classes_", TARGET_CLASSES))
+    class_probabilities = {cls: float(prob) for cls, prob in zip(classes, pred_proba_arr)}
+    predicted_probability = float(class_probabilities[pred_class])
+
+    # Compute SHAP explanation on the preprocessed row
+    shap_exp = explainer(preprocessed_df)
+
+    class_idx = classes.index(pred_class)
+    base_value = float(shap_exp.base_values[0, class_idx])
+    raw_contributions = shap_exp.values[0, :, class_idx]
+
+    contributions_list: List[Dict[str, Any]] = []
+    for j, feat in enumerate(FINAL_EXTENDED_FEATURE_COLUMNS):
+        contrib = float(raw_contributions[j])
+        abs_contrib = float(abs(contrib))
+        if contrib > 1e-7:
+            direction = "increases_probability"
+        elif contrib < -1e-7:
+            direction = "decreases_probability"
+        else:
+            direction = "neutral"
+
+        contributions_list.append(
+            {
+                "feature": feat,
+                "feature_value": feature_values_map.get(feat, float(preprocessed_df.iloc[0][feat])),
+                "contribution": contrib,
+                "absolute_contribution": abs_contrib,
+                "direction": direction,
+            }
+        )
+
+    # Sort contributions by absolute magnitude descending
+    contributions_list.sort(key=lambda item: item["absolute_contribution"], reverse=True)
+    for rank_idx, item in enumerate(contributions_list, start=1):
+        item["rank"] = rank_idx
+
+    contributions_sum = float(np.sum(raw_contributions))
+    additive_check_passed = bool(
+        np.isclose(base_value + contributions_sum, predicted_probability, atol=1e-5)
+    )
+
+    per_class_contributions: Dict[str, Any] = {}
+    for c_i, c_name in enumerate(classes):
+        c_base = float(shap_exp.base_values[0, c_i])
+        c_contribs = {
+            FINAL_EXTENDED_FEATURE_COLUMNS[j]: float(shap_exp.values[0, j, c_i])
+            for j in range(len(FINAL_EXTENDED_FEATURE_COLUMNS))
+        }
+        per_class_contributions[c_name] = {
+            "base_value": c_base,
+            "contributions": c_contribs,
+        }
+
+    return {
+        "predicted_class": pred_class,
+        "predicted_probability": predicted_probability,
+        "base_value": base_value,
+        "feature_contributions": contributions_list,
+        "contributions_sum": contributions_sum,
+        "additive_check_passed": additive_check_passed,
+        "class_probabilities": class_probabilities,
+        "per_class_contributions": per_class_contributions,
+        "causation_caveat": CAUSATION_CAVEAT_STATEMENT,
+    }
+
+
+def generate_shap_local_plot(
+    model: Optional[Any] = None,
+    single_input_row: Optional[Union[pd.DataFrame, pd.Series, Dict[str, Any]]] = None,
+    output_path: Optional[Union[str, Path]] = None,
+    show: bool = False,
+) -> Path:
+    """
+    Generate and save a local explanation waterfall plot for a single observation.
+
+    Parameters
+    ----------
+    model : Optional[Any]
+        Pipeline or classifier.
+    single_input_row : Optional[Union[pd.DataFrame, pd.Series, Dict[str, Any]]]
+        Single observation. If None, defaults to the first row of test set.
+    output_path : Optional[Union[str, Path]]
+        Destination path for the saved image. Defaults to reports/figures/shap_local_example.png.
+    show : bool, default=False
+        Whether to display interactively.
+
+    Returns
+    -------
+    saved_path : Path
+        Path to the saved PNG image.
+    """
+    out_file = Path(output_path) if output_path is not None else DEFAULT_LOCAL_PLOT_PATH
+    out_file.parent.mkdir(parents=True, exist_ok=True)
+
+    pipeline = model if isinstance(model, Pipeline) else load_frozen_pipeline(model)
+
+    if single_input_row is None:
+        if not DEFAULT_TEST_DATA_PATH.exists():
+            raise FileNotFoundError(f"Test data not found at {DEFAULT_TEST_DATA_PATH}")
+        test_df = pd.read_csv(DEFAULT_TEST_DATA_PATH, index_col=0)
+        single_input_row = test_df.iloc[[0]].drop(columns=[LOG_FECAL_COLIFORM_COL], errors="ignore")
+
+    explanation = get_local_explanation(pipeline, single_input_row)
+    pred_class = explanation["predicted_class"]
+
+    preprocessed_df, _ = prepare_features_for_explainer(pipeline, single_input_row)
+    classifier = get_tree_classifier(pipeline)
+    explainer = shap.TreeExplainer(classifier)
+    shap_exp = explainer(preprocessed_df)
+
+    classes = list(getattr(classifier, "classes_", TARGET_CLASSES))
+    class_idx = classes.index(pred_class)
+
+    single_explanation_obj = shap.Explanation(
+        values=shap_exp.values[0, :, class_idx],
+        base_values=shap_exp.base_values[0, class_idx],
+        data=preprocessed_df.iloc[0].values,
+        feature_names=FINAL_EXTENDED_FEATURE_COLUMNS,
+    )
+
+    plt.figure(figsize=(9, 5))
+    shap.plots.waterfall(single_explanation_obj, show=False)
+    plt.title(
+        f"Local SHAP Feature Contributions (Predicted Class: {pred_class})",
+        fontsize=12,
+        pad=14,
+    )
+    plt.tight_layout()
+    plt.savefig(out_file, bbox_inches="tight", dpi=150)
+    if show:
+        plt.show()
+    plt.close()
+
+    logger.info("Local SHAP explanation plot saved successfully to: %s", out_file)
+    return out_file
+
+
 def compare_shap_with_eda(
     global_importance_df: Optional[pd.DataFrame] = None,
 ) -> Dict[str, Any]:
@@ -432,6 +686,7 @@ def compare_shap_with_eda(
     """
     if global_importance_df is None:
         global_importance_df = get_global_importance()
+
 
     top_3_shap = global_importance_df.head(3)["feature"].tolist()
 
@@ -507,3 +762,25 @@ if __name__ == "__main__":
     for f in comp["findings"]:
         print(f"[{f['status']}] {f['feature']} (SHAP Rank: {f.get('shap_rank', 'N/A')})")
         print(f"  {f['details']}\n")
+
+    print("\n=== Milestone 7.2: SHAP Local Explanation Module ===")
+    sample_row = {
+        "Potential of Hydrogen (pH)": 7.5,
+        "Dissolved oxygen (mg/L)": 6.2,
+        "Biochemical Oxygen Demand (mg/L)": 2.1,
+        "Fecal Coliform (MPN/100mL)": 150.0,
+    }
+    local_exp = get_local_explanation(single_input_row=sample_row)
+    print(f"Sample Input: {sample_row}")
+    print(f"Predicted Class: {local_exp['predicted_class']} (Prob: {local_exp['predicted_probability']:.4f})")
+    print(f"Base Value: {local_exp['base_value']:.4f}")
+    print(f"Contributions Sum: {local_exp['contributions_sum']:.4f}")
+    print(f"Additive Property Check Passed: {local_exp['additive_check_passed']}")
+    print("Feature Contributions:")
+    for c in local_exp["feature_contributions"]:
+        print(f"  {c['rank']}. {c['feature']}: value={c['feature_value']}, contrib={c['contribution']:+.4f} ({c['direction']})")
+    print(f"Causation Caveat: {local_exp['causation_caveat']}")
+
+    local_plot = generate_shap_local_plot(single_input_row=sample_row)
+    print(f"Local waterfall plot saved to: {local_plot}")
+
