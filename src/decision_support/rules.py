@@ -373,6 +373,277 @@ def get_overall_priority(
     return "Low"
 
 
+def _keys_match(rule_param_name: str, feat_name: str) -> bool:
+    """Check if a rule parameter name and a SHAP feature name refer to the same physical parameter."""
+    if rule_param_name == feat_name:
+        return True
+    k1 = _normalize_key(rule_param_name)
+    k2 = _normalize_key(feat_name)
+    if k1 == k2:
+        return True
+    # Fecal coliform raw vs log-engineered
+    if k1 in ("FC", "Log10_FC") and k2 in ("FC", "Log10_FC"):
+        return True
+    return False
+
+
+def generate_decision_support(
+    prediction: Optional[Union[str, Dict[str, Any]]] = None,
+    local_shap_output: Optional[Dict[str, Any]] = None,
+    parameter_values: Optional[Union[Dict[str, Any], Any]] = None,
+    top_n: int = 3,
+    thresholds_config: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Wire model-level SHAP explanation to rule-based domain interpretation and recommendations.
+
+    Implements the 4-level chain of evidence mandated by Specification Sections 32 & 48:
+        Level 0: Water Quality Prediction (WHAT)
+        Level 1: Model-Level Evidence / SHAP Attribution (WHY)
+        Level 2: Parameter Interpretation / Domain Rules (WHAT DOES IT MEAN)
+        Level 3: Recommended Actions (WHAT CAN BE DONE)
+
+    Edge Case Handling:
+        - SHAP-important but normal-range: When a top-N SHAP feature is within statutory limits,
+          it is explicitly cataloged under `shap_important_normal_parameters` with an explanatory
+          note rather than silently dropped.
+        - Abnormal but not in top-N SHAP: When a parameter exceeds statutory limits but did not
+          dominate the model's top mathematical split path, it is surfaced under
+          `additional_abnormal_parameters` as a secondary diagnostic alert.
+
+    Args:
+        prediction: Predicted class string (e.g. "Poor") or dict containing prediction metadata.
+        local_shap_output: Dictionary returned by `get_local_explanation(model, input_row)`.
+        parameter_values: Dictionary (or DataFrame/Series) of observed water quality parameters.
+        top_n: Number of top SHAP contributors to cross-reference (defaults to 3).
+        thresholds_config: Optional custom thresholds configuration dictionary.
+
+    Returns:
+        Structured dictionary containing four distinct labeled sections:
+            - "prediction": Level 0 prediction metadata
+            - "model_level_evidence": Level 1 SHAP attributions and directional contributions
+            - "parameter_interpretation": Level 2 domain rule interpretations (abnormal & normal)
+            - "recommended_actions": Level 3 prioritized actionable recommendations
+        Plus top-level convenience accessors (`overall_priority`, `causation_caveat`).
+    """
+    # -----------------------------------------------------------------------
+    # 1. Resolve Prediction (Level 0: WHAT)
+    # -----------------------------------------------------------------------
+    pred_class: Optional[str] = None
+    pred_prob: Optional[float] = None
+    class_probs: Optional[Dict[str, float]] = None
+
+    if isinstance(prediction, str):
+        pred_class = prediction
+    elif isinstance(prediction, dict):
+        pred_class = prediction.get("predicted_class") or prediction.get("prediction")
+        pred_prob = prediction.get("predicted_probability")
+        class_probs = prediction.get("class_probabilities")
+
+    if pred_class is None and local_shap_output:
+        pred_class = local_shap_output.get("predicted_class")
+    if pred_prob is None and local_shap_output:
+        pred_prob = local_shap_output.get("predicted_probability")
+    if class_probs is None and local_shap_output:
+        class_probs = local_shap_output.get("class_probabilities")
+
+    resolved_pred_class = pred_class if pred_class else "Unknown"
+
+    section_prediction = {
+        "stage": "Level 0: Water Quality Prediction (WHAT)",
+        "predicted_class": resolved_pred_class,
+        "predicted_probability": pred_prob,
+        "class_probabilities": class_probs,
+        "summary": f"Predicted Water Quality: {resolved_pred_class}",
+    }
+
+    # -----------------------------------------------------------------------
+    # 2. Resolve Model-Level Evidence from SHAP (Level 1: WHY)
+    # -----------------------------------------------------------------------
+    all_contributions: List[Dict[str, Any]] = []
+    base_val: Optional[float] = None
+    additive_passed: Optional[bool] = None
+
+    if local_shap_output:
+        all_contributions = list(local_shap_output.get("feature_contributions", []))
+        base_val = local_shap_output.get("base_value")
+        additive_passed = local_shap_output.get("additive_check_passed")
+
+    top_n_features = all_contributions[:top_n] if top_n > 0 else all_contributions
+
+    section_model_evidence = {
+        "stage": "Level 1: Model-Level Evidence (WHY)",
+        "top_contributing_features": top_n_features,
+        "all_feature_contributions": all_contributions,
+        "base_value": base_val,
+        "additive_check_passed": additive_passed,
+        "causation_caveat": (
+            "SHAP values reflect statistical attribution toward model output and do not "
+            "prove physical, chemical, or biological causation (Specification Section 31/48)."
+        ),
+    }
+
+    # -----------------------------------------------------------------------
+    # 3. Resolve Parameter Values & Run Rule Engine Evaluation
+    # -----------------------------------------------------------------------
+    param_dict: Dict[str, Any] = {}
+    if parameter_values is not None:
+        if hasattr(parameter_values, "to_dict"):
+            if hasattr(parameter_values, "iloc"):
+                param_dict = parameter_values.iloc[0].to_dict()
+            else:
+                param_dict = parameter_values.to_dict()
+        elif isinstance(parameter_values, dict):
+            param_dict = dict(parameter_values)
+    elif local_shap_output and all_contributions:
+        # Fallback: recover parameter values from SHAP contribution records
+        param_dict = {
+            item["feature"]: item["feature_value"]
+            for item in all_contributions
+            if "feature" in item and "feature_value" in item
+        }
+
+    all_triggered_rules = evaluate_parameters(
+        parameter_values=param_dict,
+        thresholds_config=thresholds_config,
+        predicted_class=resolved_pred_class,
+    )
+
+    # -----------------------------------------------------------------------
+    # 4. Integrate SHAP with Rules (Level 2: WHAT DOES IT MEAN)
+    # -----------------------------------------------------------------------
+    abnormal_contributing: List[Dict[str, Any]] = []
+    shap_normal: List[Dict[str, Any]] = []
+    matched_rule_indices: Set[int] = set()
+
+    for feat in top_n_features:
+        feat_name = feat.get("feature", "")
+        # Look for matching triggered rules
+        matching_rules = [
+            (idx, r) for idx, r in enumerate(all_triggered_rules)
+            if _keys_match(r["parameter"], feat_name)
+        ]
+
+        if matching_rules:
+            for idx, rule in matching_rules:
+                matched_rule_indices.add(idx)
+                abnormal_contributing.append({
+                    "feature": feat_name,
+                    "observed_value": feat.get("feature_value"),
+                    "shap_rank": feat.get("rank"),
+                    "shap_contribution": feat.get("contribution"),
+                    "shap_direction": feat.get("direction"),
+                    "condition": rule["condition"],
+                    "interpretation": rule["interpretation"],
+                    "possible_factors": rule["possible_factors"],
+                    "priority": rule["priority"],
+                    "recommendations": rule["recommendations"],
+                    "rule_details": rule,
+                })
+        else:
+            # Edge Case 1: SHAP-important but within normal range
+            shap_normal.append({
+                "feature": feat_name,
+                "observed_value": feat.get("feature_value"),
+                "shap_rank": feat.get("rank"),
+                "shap_contribution": feat.get("contribution"),
+                "shap_direction": feat.get("direction"),
+                "status": "Within standard regulatory limits",
+                "interpretation": (
+                    f"Parameter '{feat_name}' provided statistical attribution toward the model prediction, "
+                    f"but its observed value is currently within standard statutory limits. "
+                    f"This indicates a baseline supporting factor or subtle multi-parameter interaction."
+                ),
+                "possible_factors": [
+                    "Baseline parameter within permissible ecological range",
+                    "Multi-parameter interaction path in decision tree structure",
+                ],
+            })
+
+    # Edge Case 2: Abnormal parameters NOT among top-N SHAP contributors
+    additional_abnormal: List[Dict[str, Any]] = []
+    for idx, rule in enumerate(all_triggered_rules):
+        if idx not in matched_rule_indices:
+            additional_abnormal.append({
+                "parameter": rule["parameter"],
+                "condition": rule["condition"],
+                "interpretation": rule["interpretation"],
+                "possible_factors": rule["possible_factors"],
+                "priority": rule["priority"],
+                "recommendations": rule["recommendations"],
+                "note": (
+                    f"Parameter '{rule['parameter']}' exceeds statutory limits and is flagged as an abnormal condition, "
+                    f"although it was not among the top {top_n} mathematical attribution contributors for this specific prediction."
+                ),
+                "rule_details": rule,
+            })
+
+    section_parameter_interpretation = {
+        "stage": "Level 2: Parameter Interpretation (WHAT DOES IT MEAN)",
+        "abnormal_contributing_parameters": abnormal_contributing,
+        "shap_important_normal_parameters": shap_normal,
+        "additional_abnormal_parameters": additional_abnormal,
+    }
+
+    # -----------------------------------------------------------------------
+    # 5. Compile Prioritized Recommendations (Level 3: WHAT CAN BE DONE)
+    # -----------------------------------------------------------------------
+    high_actions: List[str] = []
+    med_actions: List[str] = []
+    low_actions: List[str] = []
+    all_action_items: List[Dict[str, Any]] = []
+
+    combined_rules = [item["rule_details"] for item in abnormal_contributing] + [
+        item["rule_details"] for item in additional_abnormal
+    ]
+
+    for rule in combined_rules:
+        prio = rule.get("priority", "Medium")
+        param_label = rule.get("parameter", "Unknown")
+        for rec in rule.get("recommendations", []):
+            action_entry = {
+                "parameter": param_label,
+                "priority": prio,
+                "recommendation": rec,
+            }
+            if action_entry not in all_action_items:
+                all_action_items.append(action_entry)
+
+            if prio == "High" and rec not in high_actions:
+                high_actions.append(rec)
+            elif prio == "Medium" and rec not in med_actions:
+                med_actions.append(rec)
+            elif prio == "Low" and rec not in low_actions:
+                low_actions.append(rec)
+
+    overall_priority = get_overall_priority(all_triggered_rules, predicted_class=resolved_pred_class)
+
+    section_recommended_actions = {
+        "stage": "Level 3: Recommended Actions (WHAT CAN BE DONE)",
+        "overall_priority": overall_priority,
+        "action_items": all_action_items,
+        "high_priority_actions": high_actions,
+        "medium_priority_actions": med_actions,
+        "low_priority_actions": low_actions,
+    }
+
+    return {
+        # The 4 distinct labeled sections
+        "prediction": section_prediction,
+        "model_level_evidence": section_model_evidence,
+        "parameter_interpretation": section_parameter_interpretation,
+        "recommended_actions": section_recommended_actions,
+        # Top-level convenience accessors
+        "predicted_class": resolved_pred_class,
+        "overall_priority": overall_priority,
+        "abnormal_parameter_count": len(all_triggered_rules),
+        "causation_caveat": (
+            "Decision-support outputs provide diagnostic interpretations and investigative recommendations "
+            "based on statistical models and environmental standards. They indicate potential associations "
+            "and do not constitute physical, chemical, or legal proof of pollution origin or causation."
+        ),
+    }
+
+
 def summarize_decision_support(
     parameter_values: Dict[str, Any],
     thresholds_config: Optional[Dict[str, Any]] = None,
@@ -435,3 +706,4 @@ if __name__ == "__main__":
         print(f"  Interpretation:  {rule['interpretation']}")
         print(f"  Recommendations: {', '.join(rule['recommendations'][:2])}")
     print("=" * 70)
+
