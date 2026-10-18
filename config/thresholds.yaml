@@ -1,0 +1,329 @@
+# Water Quality Monitoring Decision-Support Thresholds Configuration
+# Document Reference: Docs/threshold_standards.md (STD-THRESH-CPCB-2026-V1)
+# Milestone: Milestone 8.2: Rule Engine Implementation
+# Owner: Explainability & Decision Support Lead (Person C)
+#
+# Boundary Condition Semantics (Spec Section 55 & Docs/threshold_standards.md):
+# - Upper limits (S_i): value <= threshold is NORMAL; value > threshold is ABNORMAL.
+# - Lower limits (DO): value >= threshold is NORMAL; value < threshold is ABNORMAL.
+# - Range limits (pH): min_acceptable <= value <= max_acceptable is NORMAL.
+
+metadata:
+  document_id: "STD-THRESH-CPCB-2026-V1"
+  version: "1.0.0"
+  description: "Official regulatory thresholds and rule templates for the Decision-Support Rule Engine"
+  source_standards:
+    - "CPCB Guidelines for Water Quality Management (2008 & 2017)"
+    - "BIS IS 10500:2012 Drinking Water Specification"
+    - "Docs/wqi_standard.md (STD-WQI-CPCB-2026-V1)"
+    - "WHO Guidelines for Drinking-water Quality (2017)"
+
+# ---------------------------------------------------------------------------
+# Parameter Thresholds & Alert Levels
+# ---------------------------------------------------------------------------
+parameters:
+  pH:
+    column_name: "Potential of Hydrogen (pH)"
+    aliases: ["pH", "ph", "Potential of Hydrogen (pH)"]
+    unit: "pH scale"
+    min_acceptable: 6.5
+    max_acceptable: 8.5
+    critical_low: 4.0
+    critical_high: 9.5
+    standard_source: "CPCB Class A/B/C Criteria / BIS IS 10500:2012"
+    rules:
+      low:
+        condition_desc: "pH < 6.5 (Acidic water condition)"
+        interpretation: "Acidic water condition below permissible regulatory range (pH 6.5 - 8.5)."
+        possible_factors:
+          - "Industrial acidic discharge or mine drainage"
+          - "Acid precipitation or organic humic acid runoff"
+          - "Excessive carbon dioxide dissolution from decomposing organic matter"
+        recommendations:
+          - "Investigate upstream discharge sources and industrial drainage"
+          - "Inspect pH neutralization units in nearby effluent treatment plants"
+          - "Verify probe calibration before initiating physical neutralization"
+        base_priority: "Medium"
+        critical_priority: "High"
+      high:
+        condition_desc: "pH > 8.5 (Alkaline water condition)"
+        interpretation: "Alkaline water condition exceeding permissible regulatory range (pH 6.5 - 8.5)."
+        possible_factors:
+          - "Industrial alkaline effluent discharge (textile, chemical, paper)"
+          - "Excessive algal photosynthetic activity consuming dissolved carbon dioxide"
+          - "Agricultural limestone or basic runoff"
+        recommendations:
+          - "Investigate nearby industrial alkaline wastewater streams"
+          - "Inspect water body for algal blooms or excessive weed growth"
+          - "Review alkaline neutralization processes and water hardness"
+        base_priority: "Medium"
+        critical_priority: "High"
+
+  DO:
+    column_name: "Dissolved oxygen (mg/L)"
+    aliases: ["DO", "do", "dissolved_oxygen", "Dissolved oxygen (mg/L)"]
+    unit: "mg/L"
+    min_acceptable: 5.0
+    critical_low: 4.0
+    severe_anoxia: 2.0
+    supersaturation: 14.6
+    standard_source: "CPCB Class B (Bathing) / Class C (Drinking Source)"
+    rules:
+      low:
+        condition_desc: "Dissolved oxygen < 5.0 mg/L (Oxygen depletion)"
+        interpretation: "Dissolved oxygen depletion below regulatory minimum (>= 5.0 mg/L) required for healthy surface water."
+        possible_factors:
+          - "Elevated organic pollution load consuming oxygen through microbial decomposition"
+          - "Discharge of untreated or poorly treated domestic municipal sewage"
+          - "Elevated water temperatures reducing natural oxygen solubility"
+          - "Stagnant or low-flow hydrologic conditions"
+        recommendations:
+          - "Investigate upstream sewage and organic waste discharge points"
+          - "Cross-check Biochemical Oxygen Demand (BOD) and Chemical Oxygen Demand (COD)"
+          - "Deploy surface aeration or mechanical fountains in critical stagnant reaches"
+          - "Increase monitoring frequency at affected sampling stations"
+        base_priority: "Medium"
+        critical_priority: "High"
+      supersaturated:
+        condition_desc: "Dissolved oxygen > 14.6 mg/L (Supersaturation)"
+        interpretation: "Dissolved oxygen exceeds cold-water physical saturation (14.6 mg/L), indicating photosynthetic supersaturation."
+        possible_factors:
+          - "Severe eutrophication and rapid algal bloom proliferation"
+          - "High nutrient loading (excessive phosphorus and nitrogen)"
+        recommendations:
+          - "Screen water body for toxic cyanobacteria and harmful algal blooms"
+          - "Trace agricultural fertilizer runoff and phosphate detergent inflows"
+        base_priority: "Low"
+        critical_priority: "Medium"
+
+  BOD:
+    column_name: "Biochemical Oxygen Demand (mg/L)"
+    aliases: ["BOD", "bod", "Biochemical Oxygen Demand (mg/L)"]
+    unit: "mg/L"
+    max_acceptable: 3.0
+    critical_high: 6.0
+    severe_industrial: 30.0
+    standard_source: "CPCB Class B Water Quality Criteria (2008 & 2017)"
+    rules:
+      high:
+        condition_desc: "Biochemical Oxygen Demand > 3.0 mg/L (Organic contamination)"
+        interpretation: "Elevated Biochemical Oxygen Demand exceeding regulatory limit (<= 3.0 mg/L), indicating organic pollution."
+        possible_factors:
+          - "Discharge of untreated or partially treated domestic sanitary sewage"
+          - "Effluents from food processing, dairy, slaughterhouse, or distillery facilities"
+          - "Agricultural animal waste and organic manure runoff"
+        recommendations:
+          - "Audit nearby municipal Sewage Treatment Plants (STPs) for operational compliance"
+          - "Trace stormwater drains and non-point organic discharges"
+          - "Continuously monitor dissolved oxygen downstream to manage oxygen sag"
+        base_priority: "Medium"
+        critical_priority: "High"
+
+  FC:
+    column_name: "Fecal Coliform (MPN/100mL)"
+    aliases: ["FC", "fc", "fecal_coliform", "Fecal Coliform (MPN/100mL)"]
+    unit: "MPN/100mL"
+    max_acceptable: 250.0
+    critical_high: 2500.0
+    severe_biohazard: 50000.0
+    standard_source: "CPCB Guidelines for Water Quality Management (2017)"
+    rules:
+      high:
+        condition_desc: "Fecal coliform > 250 MPN/100mL (Pathogenic contamination)"
+        interpretation: "Fecal coliform bacterial count exceeds bathing standard (<= 250 MPN/100mL), indicating fecal pollution."
+        possible_factors:
+          - "Raw domestic sewage ingress or untreated municipal wastewater discharge"
+          - "Failing septic systems and sewage pipe leakage"
+          - "Open defecation along riparian buffer zones or livestock farm runoff"
+        recommendations:
+          - "Issue public health and recreational contact advisory immediately"
+          - "Trace municipal sewage connections and identify direct outfalls"
+          - "Ensure chlorination, UV, or advanced disinfection is active at drinking water intakes"
+        base_priority: "High"
+        critical_priority: "High"
+
+  Log10_FC:
+    column_name: "Log10 Fecal Coliform"
+    aliases: ["Log10_FC", "log10_fc", "log10_fecal_coliform", "Log10 Fecal Coliform"]
+    unit: "log10(MPN/100mL)"
+    max_acceptable: 2.398
+    critical_high: 3.398
+    standard_source: "Derived from CPCB FC <= 250 MPN/100mL via monotonic log10 transformation (M4.1)"
+    rules:
+      high:
+        condition_desc: "Log10 Fecal Coliform > 2.398 (Logarithmic pathogenic threshold exceeded)"
+        interpretation: "Log-transformed fecal coliform exceeds regulatory ceiling (log10(250) ≈ 2.398), confirming pathogenic contamination."
+        possible_factors:
+          - "Substantial fecal bacterial concentration spanning multiple orders of magnitude"
+          - "Sanitary sewer overflow or agricultural livestock waste wash-in"
+        recommendations:
+          - "Initiate microbiological sanitary survey of the watershed"
+          - "Verify disinfection barrier effectiveness across distribution network"
+        base_priority: "High"
+        critical_priority: "High"
+
+  Turbidity:
+    column_name: "Turbidity (NTU)"
+    aliases: ["Turbidity", "turbidity", "Turbidity (NTU)"]
+    unit: "NTU"
+    max_acceptable: 5.0
+    critical_high: 10.0
+    standard_source: "BIS IS 10500:2012 Table 1, Item 3"
+    rules:
+      high:
+        condition_desc: "Turbidity > 5.0 NTU (Elevated suspended matter)"
+        interpretation: "Elevated turbidity exceeding permissible drinking water limit (<= 5.0 NTU), impairing water clarity."
+        possible_factors:
+          - "Surface runoff carrying loose soil and suspended sediment"
+          - "Riparian soil erosion, dredging, or construction activity"
+          - "Heavy colloidal matter and microscopic particulate wash-in"
+        recommendations:
+          - "Investigate nearby catchment runoff, construction sites, and erosion zones"
+          - "Review coagulation, flocculation, and filtration processes in treatment works"
+          - "Increase turbidity and suspended solids monitoring frequency"
+        base_priority: "Low"
+        critical_priority: "Medium"
+
+  EC:
+    column_name: "Electric Conductivity (μS/cm)"
+    aliases: ["EC", "ec", "conductivity", "Electric Conductivity (μS/cm)"]
+    unit: "μS/cm"
+    max_acceptable: 750.0
+    critical_high: 2250.0
+    standard_source: "CPCB Guidelines (2008) Class B"
+    rules:
+      high:
+        condition_desc: "Electrical conductivity > 750 μS/cm (High dissolved ionic load)"
+        interpretation: "Elevated electrical conductivity exceeding standard threshold (<= 750 μS/cm), indicating high dissolved ionic content."
+        possible_factors:
+          - "Saline agricultural irrigation return flows"
+          - "Industrial effluent with high dissolved inorganic salts"
+          - "Mineral dissolution and seawater intrusion in coastal reaches"
+        recommendations:
+          - "Investigate agricultural drainage and upstream industrial saline discharges"
+          - "Analyze specific cation/anion balance (chloride, sulfate, sodium)"
+        base_priority: "Low"
+        critical_priority: "Medium"
+
+  TDS:
+    column_name: "Total Dissolved Solids (mg/L)"
+    aliases: ["TDS", "tds", "solids", "Total Dissolved Solids (mg/L)"]
+    unit: "mg/L"
+    max_acceptable: 500.0
+    critical_high: 2000.0
+    standard_source: "BIS IS 10500:2012 Table 1, Item 4"
+    rules:
+      high:
+        condition_desc: "Total Dissolved Solids > 500 mg/L (Elevated dissolved minerals)"
+        interpretation: "Total Dissolved Solids exceeds desirable limit (<= 500 mg/L), affecting palatability and mineral balance."
+        possible_factors:
+          - "Natural geological mineral dissolution"
+          - "Urban runoff, industrial wastewater, and saline agricultural discharges"
+        recommendations:
+          - "Check nearby municipal and industrial discharge points for mineral load"
+          - "Evaluate necessity of reverse osmosis or nanofiltration for drinking use"
+        base_priority: "Low"
+        critical_priority: "Medium"
+
+  COD:
+    column_name: "Chemical Oxygen Demand (mg/L)"
+    aliases: ["COD", "cod", "Chemical Oxygen Demand (mg/L)"]
+    unit: "mg/L"
+    max_acceptable: 10.0
+    critical_high: 25.0
+    standard_source: "CPCB Guidelines (2008) / WHO Guidelines (2011)"
+    rules:
+      high:
+        condition_desc: "Chemical Oxygen Demand > 10.0 mg/L (Refractory chemical load)"
+        interpretation: "Elevated Chemical Oxygen Demand exceeding standard threshold (<= 10.0 mg/L), indicating chemical/industrial loading."
+        possible_factors:
+          - "Discharge of non-biodegradable or toxic chemical wastes"
+          - "Industrial effluents containing complex refractory organics"
+          - "Agricultural pesticide and herbicide wash-in"
+        recommendations:
+          - "Initiate industrial effluent compliance inspection in the sub-basin"
+          - "Evaluate COD/BOD ratio to determine biodegradability of wastewater"
+          - "Review advanced oxidation or activated carbon treatment efficacy"
+        base_priority: "Medium"
+        critical_priority: "High"
+
+  TC:
+    column_name: "Total Coliform (MPN/100mL)"
+    aliases: ["TC", "tc", "total_coliform", "Total Coliform (MPN/100mL)"]
+    unit: "MPN/100mL"
+    max_acceptable: 500.0
+    critical_high: 5000.0
+    standard_source: "CPCB Class B Bathing Standard (<= 500 MPN/100mL)"
+    rules:
+      high:
+        condition_desc: "Total coliform > 500 MPN/100mL (Elevated coliform bacteria)"
+        interpretation: "Total coliform bacteria count exceeds bathing standard (<= 500 MPN/100mL)."
+        possible_factors:
+          - "Soil bacterial runoff, decaying organic matter, and stormwater wash-in"
+          - "Dilute or non-disinfected sewage effluent"
+        recommendations:
+          - "Cross-reference with Fecal Coliform to distinguish environmental from enteric contamination"
+          - "Inspect disinfection protocols at downstream water treatment works"
+        base_priority: "Medium"
+        critical_priority: "High"
+
+  Nitrate:
+    column_name: "Nitrate N (mgN/L)"
+    aliases: ["Nitrate", "nitrate", "nitrate_n", "Nitrate N (mgN/L)", "Nitrate (mg/L)"]
+    unit: "mgN/L"
+    max_acceptable: 10.0
+    critical_high: 20.0
+    standard_source: "BIS IS 10500:2012 Table 2, Item 6 (45 mg/L as NO3-)"
+    rules:
+      high:
+        condition_desc: "Nitrate Nitrogen > 10.0 mgN/L (Excessive nutrient concentration)"
+        interpretation: "Nitrate nitrogen exceeds safe drinking standard (<= 10.0 mgN/L), presenting public health methemoglobinemia risk."
+        possible_factors:
+          - "Excessive agricultural chemical fertilizer runoff (nitrates, urea)"
+          - "Leachate from septic tanks, animal feedlots, or sewage outfalls"
+        recommendations:
+          - "Issue infant drinking water safety warning immediately"
+          - "Audit seasonal agricultural fertilizer runoff in upstream catchment"
+        base_priority: "High"
+        critical_priority: "High"
+
+  Ammonia:
+    column_name: "Amonia N (mgN/L)"
+    aliases: ["Ammonia", "ammonia", "ammonia_n", "Amonia N (mgN/L)"]
+    unit: "mgN/L"
+    max_acceptable: 1.2
+    critical_high: 5.0
+    standard_source: "CPCB Class C Criteria (1.2 mg/L free ammonia) / BIS IS 10500:2012"
+    rules:
+      high:
+        condition_desc: "Ammonia Nitrogen > 1.2 mgN/L (Raw sewage or fertilizer ingress)"
+        interpretation: "Elevated ammonia nitrogen exceeds permissible ceiling (<= 1.2 mgN/L), indicating recent organic contamination."
+        possible_factors:
+          - "Fresh untreated sewage ingress or industrial ammonia discharge"
+          - "Intensive agricultural livestock slurry runoff"
+        recommendations:
+          - "Trace fresh sewage connections and upstream industrial effluent"
+          - "Monitor dissolved oxygen and aquatic toxicity closely"
+        base_priority: "Medium"
+        critical_priority: "High"
+
+  Temperature:
+    column_name: "Temperature (ºC)"
+    aliases: ["Temperature", "temperature", "temp", "Temperature (ºC)"]
+    unit: "ºC"
+    min_acceptable: 15.0
+    max_acceptable: 32.0
+    critical_high: 40.0
+    standard_source: "CPCB Environmental Standards for Thermal Discharge"
+    rules:
+      high:
+        condition_desc: "Water temperature > 32.0 ºC (Thermal stress condition)"
+        interpretation: "Water temperature exceeds normal seasonal baseline (15 - 32 ºC), increasing biological kinetics and oxygen depletion."
+        possible_factors:
+          - "Thermal power plant cooling water discharge or industrial heat effluent"
+          - "Extreme ambient heatwave and shallow solar warming"
+        recommendations:
+          - "Audit thermal effluent discharge compliance in nearby industrial facilities"
+          - "Monitor dissolved oxygen depletion accelerated by elevated temperature"
+        base_priority: "Low"
+        critical_priority: "Medium"
