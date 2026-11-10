@@ -1,0 +1,370 @@
+* {
+  box-sizing: border-box;
+}
+:root {
+  font:
+    15px Inter,
+    "Segoe UI",
+    sans-serif;
+  color: #182f39;
+  background: #f4f7f7;
+}
+body,
+dl,
+dd {
+  margin: 0;
+}
+a {
+  color: #086f69;
+  text-decoration: none;
+}
+a:focus-visible,
+button:focus-visible,
+input:focus-visible {
+  outline: 3px solid #275bda;
+  outline-offset: 2px;
+}
+.shell {
+  display: grid;
+  grid-template-columns: 230px minmax(0, 1fr);
+  min-height: 100vh;
+}
+aside {
+  background: white;
+  padding: 24px 16px;
+  border-right: 1px solid #dce5e8;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 20px;
+  font-weight: 750;
+}
+.brand svg,
+.asideNote svg {
+  color: #07847b;
+  background: #def4f0;
+  border-radius: 9px;
+  padding: 5px;
+  width: 34px;
+  height: 34px;
+}
+nav {
+  display: grid;
+  gap: 6px;
+}
+nav a {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 15px 10px;
+  border-radius: 9px;
+  color: #3b5260;
+  font-size: 14px;
+}
+nav a:hover {
+  background: #f2f6f8;
+}
+nav a[aria-current] {
+  background: #eaf2fa;
+  color: #204ec4;
+  box-shadow: inset 3px 0 #3368ec;
+}
+.asideNote {
+  margin-top: auto;
+  padding: 15px;
+  background: #f4f7f7;
+  border-radius: 12px;
+  display: grid;
+  gap: 8px;
+}
+header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #ffffffdd;
+  backdrop-filter: blur(10px);
+  padding: 20px 30px;
+  border-bottom: 1px solid #dce5e8;
+  font-size: 14px;
+}
+header svg {
+  color: #0c8279;
+}
+header b {
+  margin-left: auto;
+}
+.badge,
+mark,
+.mapLabel span {
+  background: #e5f3f0;
+  color: #196660;
+  padding: 5px 9px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+article {
+  max-width: 1500px;
+  margin: auto;
+  padding: 23px clamp(16px, 2.2vw, 38px) 40px;
+}
+h1 {
+  margin: 0;
+  font-size: clamp(25px, 2.1vw, 36px);
+  letter-spacing: -0.035em;
+}
+.intro,
+small,
+dt {
+  color: #556c78;
+}
+.intro {
+  margin: 6px 0 20px;
+}
+.card {
+  background: #ffffffed;
+  border: 1px solid #dce5e8;
+  border-radius: 15px;
+  padding: 17px;
+  box-shadow:
+    0 3px 10px #34576106,
+    inset 0 1px white;
+  min-width: 0;
+}
+h2 {
+  font-size: 17px;
+  margin: 0 0 5px;
+}
+small {
+  display: block;
+  font-size: 12px;
+}
+.metrics,
+.grid,
+.bottom,
+.inputs {
+  display: grid;
+  gap: 15px;
+  margin-bottom: 16px;
+}
+.metrics {
+  grid-template-columns: repeat(4, 1fr);
+}
+strong {
+  display: block;
+  font-size: 29px;
+  margin: 7px 0;
+}
+.grid {
+  grid-template-columns: minmax(0, 2.45fr) minmax(190px, 1fr);
+}
+.bottom {
+  grid-template-columns: 1.6fr 1fr 1fr;
+}
+.map {
+  height: clamp(200px, 22vw, 335px);
+  position: relative;
+  margin-top: 14px;
+  border-radius: 9px;
+  overflow: hidden;
+  background: #edf2ef;
+}
+.map svg {
+  width: 100%;
+  height: 100%;
+}
+.map path {
+  fill: none;
+  stroke: #80bad1;
+  stroke-width: 5;
+}
+.map .land {
+  stroke: #d4e1de;
+  stroke-width: 1.5;
+}
+.dot {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #087d75;
+  border: 2px solid white;
+}
+.mapLabel {
+  position: absolute;
+  left: 39%;
+  top: 16%;
+  padding: 13px;
+  display: grid;
+  gap: 6px;
+  background: #fffffff2;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px #344c5120;
+}
+.ring,
+.ring b {
+  border-radius: 50%;
+  display: grid;
+  place-content: center;
+  text-align: center;
+}
+.ring {
+  width: 126px;
+  height: 126px;
+  margin: 16px auto;
+}
+.ring b {
+  width: 95px;
+  height: 95px;
+  background: white;
+  font-size: 25px;
+}
+.legend,
+.row,
+.action,
+.analysis {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.legend {
+  font-size: 12px;
+  margin-top: 5px;
+}
+.legend i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.legend b,
+.row b {
+  margin-left: auto;
+}
+.measures {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  margin-top: 14px;
+}
+dt {
+  font-size: 12px;
+}
+dd {
+  font-size: 20px;
+  font-weight: 650;
+}
+.inputs {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 20px;
+}
+input {
+  display: block;
+  width: 100%;
+  margin-top: 7px;
+  border: 1px solid #cbdade;
+  background: #f7faf9;
+  border-radius: 8px;
+  padding: 12px;
+  font: inherit;
+}
+.bars {
+  display: grid;
+  gap: 18px;
+  margin: 23px 0;
+}
+.track {
+  margin-top: 7px;
+  height: 8px;
+  background: #edf2f2;
+  border-radius: 6px;
+  overflow: hidden;
+}
+.track i {
+  display: block;
+  height: 100%;
+  background: #14877e;
+}
+.action,
+.analysis {
+  padding: 16px 0;
+  border-bottom: 1px solid #e4ebec;
+  flex-wrap: wrap;
+}
+.analysis span {
+  margin-left: auto;
+}
+mark {
+  background: #fff0de;
+  color: #8b480a;
+}
+@media (max-width: 1000px) {
+  .shell {
+    grid-template-columns: 185px minmax(0, 1fr);
+  }
+  .bottom {
+    grid-template-columns: 1fr 1fr;
+  }
+  .bottom .card:first-child {
+    grid-column: 1/-1;
+  }
+}
+@media (max-width: 760px) {
+  .shell {
+    display: block;
+  }
+  aside {
+    padding: 12px;
+    gap: 12px;
+  }
+  .asideNote {
+    display: none;
+  }
+  nav {
+    display: flex;
+    overflow: auto;
+  }
+  nav a {
+    flex: none;
+    padding: 10px;
+  }
+  header {
+    padding: 12px;
+    flex-wrap: wrap;
+  }
+  .metrics,
+  .bottom,
+  .inputs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .grid {
+    grid-template-columns: 1fr;
+  }
+  .map {
+    height: 210px;
+  }
+}
+@media (max-width: 450px) {
+  .inputs,
+  .bottom {
+    grid-template-columns: 1fr;
+  }
+  .card {
+    padding: 13px;
+  }
+  .row {
+    align-items: baseline;
+  }
+  .analysis {
+    display: grid;
+  }
+  .analysis span {
+    margin: 0;
+  }
+  .mapLabel {
+    left: 35%;
+  }
+}
