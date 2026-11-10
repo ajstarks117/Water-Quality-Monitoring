@@ -1,3 +1,5 @@
+import DecisionView from "./DecisionView";
+import { HistoricalTrends } from "./HistoricalTrends";
 import Assessment from "./Assessment";
 import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
@@ -56,7 +58,7 @@ const pages = [
     "trends",
     "Historical Trends",
     History,
-    "Follow the sample station’s dissolved oxygen over time.",
+    "Compare historical measurements and WQI classes by month, state, and station.",
   ],
 ];
 const colors = ["#5aab9b", "#0e7974", "#e3b053", "#cf803b", "#5366a4"];
@@ -69,19 +71,6 @@ function Card({ title, note, children, wide = false }) {
     </section>
   );
 }
-function Measures({ d }) {
-  return (
-    <dl className="measures">
-      {d.parameters.map((p) => (
-        <div key={p.name}>
-          <dt>{p.label}</dt>
-          <dd>{p.value}</dd>
-          <small>{p.unit}</small>
-        </div>
-      ))}
-    </dl>
-  );
-}
 function Overview({ d }) {
   const counts = Object.entries(d.distribution);
   const total = counts.reduce((sum, [, n]) => sum + n, 0);
@@ -91,23 +80,22 @@ function Overview({ d }) {
     angle += (n / total) * 360;
     return colors[i] + " " + start + "deg " + angle + "deg";
   });
-  const positions = [
-    [36, 60],
-    [16, 24],
-    [28, 38],
-    [42, 35],
-    [48, 68],
-    [62, 47],
-    [75, 29],
-    [84, 74],
-  ];
+  const mapped = d.stations.filter(
+    (s) => Number.isFinite(s.Latitude) && Number.isFinite(s.Longitude),
+  );
+  const xs = mapped.map((s) => s.Longitude),
+    ys = mapped.map((s) => s.Latitude);
+  const west = Math.min(...xs),
+    south = Math.min(...ys);
+  const width = Math.max(...xs) - west || 1,
+    height = Math.max(...ys) - south || 1;
   return (
     <>
       <div className="metrics">
         {[
           ["Total valid observations", total],
           ["Unique stations", d.stations.length],
-          ["Parameters analyzed", d.parameters.length],
+          ["Parameters analyzed", d.features.length],
           ["Supported target classes", counts.length],
         ].map(([label, n]) => (
           <section className="card" key={label}>
@@ -120,45 +108,30 @@ function Overview({ d }) {
         <Card
           wide
           title="Water-station distribution"
-          note="Illustrative stations · schematic locations"
+          note="Station locations by longitude and latitude"
         >
           <div className="map">
-            <svg
-              viewBox="0 0 800 260"
-              preserveAspectRatio="none"
-              aria-hidden="true"
-            >
-              <path
-                className="land"
-                d="M0 82L110 55 220 100 332 75 450 95 570 18 800 55M110 55L82 0M220 100L166 260M450 95L385 260M570 18L635 260"
-              />
-              <path d="M-10 0C62 84 110 41 177 111S310 214 390 152 510 35 625 86 735 50 820 82M390 152Q530 98 590 179T666 270" />
-            </svg>
-            {d.stations.map((s, i) => (
+            {mapped.map((s) => (
               <span
-                title={s}
                 className="dot"
-                key={s}
+                key={s.State + s.Station}
+                title={s.Station + ", " + s.State}
                 style={{
-                  left: positions[i][0] + "%",
-                  top: positions[i][1] + "%",
+                  left: 4 + (90 * (s.Longitude - west)) / width + "%",
+                  top: 94 - (90 * (s.Latitude - south)) / height + "%",
                 }}
               />
             ))}
-            <div className="mapLabel">
-              <b>{d.station}</b>
-              <small>{d.state}</small>
-            </div>
           </div>
         </Card>
-        <Card title="Class distribution" note="Illustrative WQI classes">
+        <Card title="Class distribution" note="Labeled CPCB observations">
           <div
             className="ring"
             style={{ background: "conic-gradient(" + stops.join(",") + ")" }}
           >
             <b>
               {total}
-              <small>demo records</small>
+              <small>records</small>
             </b>
           </div>
           {counts.map(([c, n], i) => (
@@ -171,11 +144,17 @@ function Overview({ d }) {
         </Card>
       </div>
       <div className="bottom">
-        <Card title="Selected measurements" note={d.station}>
-          <Measures d={d} />
+        <Card title="Sampling coverage">
+          {[...new Set(d.stations.map((s) => s.State))].map((state) => (
+            <p key={state}>
+              {state} · {d.stations.filter((s) => s.State === state).length}{" "}
+              stations
+            </p>
+          ))}
         </Card>
         <Card title="Data source">
-          <p>Illustrative surface-water records for {d.state}.</p>
+          <p>CPCB surface-water monitoring records</p>
+          <a href="#trends">Explore historical measurements →</a>
         </Card>
         <Card title="Model readiness">
           <p>Frozen decision tree</p>
@@ -290,57 +269,18 @@ function PredictionView({ result, explanationFirst }) {
     </>
   );
 }
-function Detail({ id, d }) {
-  switch (id) {
-    case "parameters":
-      return (
-        <Card title="Measurement review">
-          {d.parameters.map((p) => (
-            <div className="analysis" key={p.name}>
-              <b>{p.name}</b>
-              <span>
-                {p.value} {p.unit}
-              </span>
-              <small>{p.status}</small>
-            </div>
-          ))}
-        </Card>
-      );
-    case "decisions":
-      return (
-        <Card
-          title="Recommended actions"
-          note={"Overall priority · " + d.decision.overall_priority}
-        >
-          {d.decision.recommended_actions.action_items.map((a) => (
-            <div className="action" key={a.recommendation}>
-              <mark>{a.priority}</mark>
-              {a.recommendation}
-            </div>
-          ))}
-        </Card>
-      );
-    case "trends":
-      return (
-        <Card
-          title="Dissolved oxygen"
-          note={d.station + " · monthly measurements (mg/L)"}
-        >
-          <Bars
-            max={Math.max(...d.trends.map((t) => t.value))}
-            rows={d.trends.map((t) => [t.month, t.value, t.value + " mg/L"])}
-          />
-        </Card>
-      );
-  }
-}
 function currentPage() {
   return pages.find(([id]) => "#" + id === location.hash) || pages[0];
 }
 function App() {
   const [page, setPage] = useState(currentPage);
   const [prediction, setPrediction] = useState(null);
-  const liveResult = ["prediction", "explanation"].includes(page[0]);
+  const liveResult = [
+    "prediction",
+    "explanation",
+    "parameters",
+    "decisions",
+  ].includes(page[0]);
   const [data, setData] = useState(null);
   const [error, setError] = useState(false);
   const [attempt, retry] = useState(0);
@@ -396,9 +336,8 @@ function App() {
               ? "Manual entry"
               : liveResult
                 ? "Live model"
-                : data?.mode || "Demo"}
+                : "Historical records"}
           </span>
-          {!liveResult && page[0] !== "input" && <b>{data?.state}</b>}
         </header>
         <article>
           <h1>{page[1]}</h1>
@@ -406,7 +345,10 @@ function App() {
           <div hidden={page[0] !== "input"}>
             <Assessment onPrediction={setPrediction} />
           </div>
-          {page[0] === "input" ? null : liveResult ? (
+          {page[0] === "input" ? null : prediction &&
+            ["parameters", "decisions"].includes(page[0]) ? (
+            <DecisionView page={page[0]} result={prediction} Card={Card} />
+          ) : liveResult ? (
             <PredictionView
               result={prediction}
               explanationFirst={page[0] === "explanation"}
@@ -421,7 +363,7 @@ function App() {
           ) : page[0] === "overview" ? (
             <Overview d={data} />
           ) : (
-            <Detail id={page[0]} d={data} />
+            <HistoricalTrends data={data} Card={Card} Bars={Bars} />
           )}
         </article>
       </main>
