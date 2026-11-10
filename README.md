@@ -101,9 +101,19 @@ pytest tests/ -v
 
 ---
 
+## 📊 Deliverables & Key Reports
+
+- **Deliverable 1 (Data Cleaning Decisions)**: [`Docs/cleaning_decisions.md`](Docs/cleaning_decisions.md)
+- **Deliverable 2 (EDA Executive Summary Report)**: [`reports/eda_summary.md`](reports/eda_summary.md)
+- **Data Dictionary & Frozen Schema**: [`Docs/data_dictionary.md`](Docs/data_dictionary.md)
+- **WQI Computation Standard**: [`Docs/wqi_standard.md`](Docs/wqi_standard.md)
+
+---
+
 ## 🛡️ Collaboration & Branching Rules
 
 - **Default Branch**: `main` (Protected)
 - **Feature Branches**: `feat/<milestone-id>-<description>`, `fix/<issue-id>`, `chore/<task>`
 - Pull requests require review before merging to `main`.
 - Never commit secrets (`.env`), raw bulk data files (`data/raw/`), virtual environments (`venv/`), or untracked intermediate model checkpoints.
+

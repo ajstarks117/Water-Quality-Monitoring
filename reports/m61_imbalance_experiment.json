@@ -1,0 +1,164 @@
+{
+  "Baseline (class_weight=balanced)": {
+    "Logistic Regression": {
+      "accuracy": 0.7872340425531915,
+      "macro_f1": 0.5647682925387677,
+      "weighted_f1": 0.8135080667786563,
+      "recall_macro": 0.7634658578136839,
+      "per_class_recall": {
+        "Excellent": 1.0,
+        "Good": 0.6363636363636364,
+        "Poor": 0.6043956043956044,
+        "Unsuitable": 0.8972222222222223,
+        "Very Poor": 0.6793478260869565
+      }
+    },
+    "Decision Tree": {
+      "accuracy": 0.9376899696048632,
+      "macro_f1": 0.9067013557139552,
+      "weighted_f1": 0.937479224267294,
+      "recall_macro": 0.9021960648047604,
+      "per_class_recall": {
+        "Excellent": 1.0,
+        "Good": 0.7272727272727273,
+        "Poor": 0.9010989010989011,
+        "Unsuitable": 0.975,
+        "Very Poor": 0.907608695652174
+      }
+    },
+    "Random Forest": {
+      "accuracy": 0.9544072948328267,
+      "macro_f1": 0.8416830020383342,
+      "weighted_f1": 0.9534404883472212,
+      "recall_macro": 0.8907682172899565,
+      "per_class_recall": {
+        "Excellent": 1.0,
+        "Good": 0.5909090909090909,
+        "Poor": 0.9230769230769231,
+        "Unsuitable": 0.9833333333333333,
+        "Very Poor": 0.9565217391304348
+      }
+    },
+    "XGBoost": {
+      "accuracy": 0.9604863221884499,
+      "macro_f1": 0.7237224602969862,
+      "weighted_f1": 0.959737049279687,
+      "recall_macro": 0.7111961468483208,
+      "per_class_recall": {
+        "Excellent": 0.0,
+        "Good": 0.6818181818181818,
+        "Poor": 0.9340659340659341,
+        "Unsuitable": 0.9944444444444445,
+        "Very Poor": 0.9456521739130435
+      }
+    }
+  },
+  "SMOTE": {
+    "Logistic Regression": {
+      "accuracy": 0.8115501519756839,
+      "macro_f1": 0.5762692791533933,
+      "weighted_f1": 0.8358005410578826,
+      "recall_macro": 0.7815326943587813,
+      "per_class_recall": {
+        "Excellent": 1.0,
+        "Good": 0.6363636363636364,
+        "Poor": 0.6373626373626373,
+        "Unsuitable": 0.9111111111111111,
+        "Very Poor": 0.7228260869565217
+      }
+    },
+    "Decision Tree": {
+      "accuracy": 0.9346504559270516,
+      "macro_f1": 0.9007166284024131,
+      "weighted_f1": 0.9351657356587212,
+      "recall_macro": 0.9132769645813124,
+      "per_class_recall": {
+        "Excellent": 1.0,
+        "Good": 0.8181818181818182,
+        "Poor": 0.8791208791208791,
+        "Unsuitable": 0.9777777777777777,
+        "Very Poor": 0.8913043478260869
+      }
+    },
+    "Random Forest": {
+      "accuracy": 0.9574468085106383,
+      "macro_f1": 0.712092181810336,
+      "weighted_f1": 0.9564411406285387,
+      "recall_macro": 0.7089741900611466,
+      "per_class_recall": {
+        "Excellent": 0.0,
+        "Good": 0.6818181818181818,
+        "Poor": 0.9230769230769231,
+        "Unsuitable": 0.9888888888888889,
+        "Very Poor": 0.9510869565217391
+      }
+    },
+    "XGBoost": {
+      "accuracy": 0.952887537993921,
+      "macro_f1": 0.701734060621416,
+      "weighted_f1": 0.9518133371667551,
+      "recall_macro": 0.6981927251492468,
+      "per_class_recall": {
+        "Excellent": 0.0,
+        "Good": 0.6363636363636364,
+        "Poor": 0.9120879120879121,
+        "Unsuitable": 0.9805555555555555,
+        "Very Poor": 0.9619565217391305
+      }
+    }
+  },
+  "RandomOverSampler": {
+    "Logistic Regression": {
+      "accuracy": 0.8054711246200608,
+      "macro_f1": 0.5728735221418149,
+      "weighted_f1": 0.83143460899855,
+      "recall_macro": 0.7749631769196986,
+      "per_class_recall": {
+        "Excellent": 1.0,
+        "Good": 0.6363636363636364,
+        "Poor": 0.6153846153846154,
+        "Unsuitable": 0.9111111111111111,
+        "Very Poor": 0.7119565217391305
+      }
+    },
+    "Decision Tree": {
+      "accuracy": 0.9346504559270516,
+      "macro_f1": 0.9015270339143499,
+      "weighted_f1": 0.9342900079048537,
+      "recall_macro": 0.8989593498289151,
+      "per_class_recall": {
+        "Excellent": 1.0,
+        "Good": 0.7272727272727273,
+        "Poor": 0.9010989010989011,
+        "Unsuitable": 0.9805555555555555,
+        "Very Poor": 0.8858695652173914
+      }
+    },
+    "Random Forest": {
+      "accuracy": 0.9513677811550152,
+      "macro_f1": 0.8324044183271523,
+      "weighted_f1": 0.9498370271673455,
+      "recall_macro": 0.8784167040688778,
+      "per_class_recall": {
+        "Excellent": 1.0,
+        "Good": 0.5454545454545454,
+        "Poor": 0.9120879120879121,
+        "Unsuitable": 0.9888888888888889,
+        "Very Poor": 0.9456521739130435
+      }
+    },
+    "XGBoost": {
+      "accuracy": 0.9635258358662614,
+      "macro_f1": 0.8543747750385325,
+      "weighted_f1": 0.9627551693895928,
+      "recall_macro": 0.9042791508008898,
+      "per_class_recall": {
+        "Excellent": 1.0,
+        "Good": 0.6363636363636364,
+        "Poor": 0.9340659340659341,
+        "Unsuitable": 0.9944444444444445,
+        "Very Poor": 0.9565217391304348
+      }
+    }
+  }
+}

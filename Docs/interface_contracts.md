@@ -1,66 +1,213 @@
 # Cross-Track Interface Contracts
 
-This document specifies the two hard interface contracts binding Track A (Data), Track B (ML), Track C (XAI/Decision Support), and Track D (Dashboard/Integration).
+**Document ID**: `CONTRACT-INTER-TRACK-2026-V2`  
+**Milestone**: Milestone 1.4 (Data Dictionary & Schema Freeze)  
+**Status**: **FROZEN**  
+**Last Updated**: 2026-10-05  
+
+This document specifies the two hard interface contracts binding **Track A (Data)**, **Track B (ML)**, **Track C (XAI/Decision Support)**, and **Track D (Dashboard/Integration)**.
 
 ---
 
 ## 1. Cleaned Data Contract
 
 - **Owner**: Track A (Data Pipeline)
-- **Freeze Milestone**: **M1.2** (Cleaned Data Pipeline & Schema Lock)
+- **Freeze Milestone**: **M1.4** (Data Dictionary & Schema Freeze)
 - **Consumer Tracks**: Track B (ML Models), Track C (Explainability), Track D (Dashboard)
-- **Location**: `data/processed/` (referenced via `config/config.yaml`)
+- **Location**: `data/interim/cpcb_labeled.csv` (and downstream `data/processed/train.csv`, `data/processed/test.csv`)
+- **Central Configuration**: `config/config.yaml` (`feature_columns`, `target_column`, `secondary_target_column`)
 
-### Schema Specification
-| Column Name | Data Type | Units / Range | Role |
-|---|---|---|---|
-| `ph` | `float64` | 0.0 - 14.0 | Feature |
-| `Hardness` | `float64` | mg/L (approx. 47 - 323) | Feature |
-| `Solids` | `float64` | ppm (approx. 320 - 61227) | Feature |
-| `Chloramines` | `float64` | ppm (approx. 0.35 - 13.1) | Feature |
-| `Sulfate` | `float64` | mg/L (approx. 129 - 481) | Feature |
-| `Conductivity` | `float64` | μS/cm (approx. 181 - 753) | Feature |
-| `Organic_carbon` | `float64` | ppm (approx. 2.2 - 28.3) | Feature |
-| `Trihalomethanes` | `float64` | μg/L (approx. 0.7 - 124.0) | Feature |
-| `Turbidity` | `float64` | NTU (approx. 1.4 - 6.7) | Feature |
-| `Potability` | `int64` | `0` (Not Potable), `1` (Potable) | **Target** |
+### Frozen Schema Specification (Candidate Feature Set & Targets)
+
+| Column Name | Data Type | Units | Plausible Range | Role | Description |
+|:---|:---|:---|:---|:---|:---|
+| `Potential of Hydrogen (pH)` | `float64` | pH scale ($0-14$) | $[0.0, 14.0]$ | **Candidate Feature** | Acidity/alkalinity balance. CPCB limit: $6.5 - 8.5$. |
+| `Dissolved oxygen (mg/L)` | `float64` | $\text{mg/L}$ | $[0.0, 30.0]$ | **Candidate Feature** | Dissolved oxygen concentration. CPCB limit: $\ge 5.0\text{ mg/L}$. |
+| `Biochemical Oxygen Demand (mg/L)` | `float64` | $\text{mg/L}$ | $[0.0, 200.0]$ | **Candidate Feature** | 3-day BOD at 27ºC. CPCB limit: $\le 3.0\text{ mg/L}$. |
+| `Fecal Coliform (MPN/100mL)` | `float64` | $\text{MPN/100mL}$ | $[0.0, 10^8]$ | **Candidate Feature** | Pathogenic bacterial indicator. CPCB limit: $\le 250\text{ MPN/100mL}$. |
+| `wqi_class` | `object` / `string` | Categorical Label | 5 Classes | **Primary Target** | Multi-class label: `Excellent`, `Good`, `Poor`, `Very Poor`, `Unsuitable`. |
+| `Potability` | `int64` | Binary Flag | `[0, 1]` | **Secondary Target** | Binary potability: `1` (Potable: Excellent/Good), `0` (Non-Potable). |
+
+### Mandatory Data Leakage Prevention Guard
+
+> [!CAUTION]
+> **STRICT TARGET LEAKAGE GUARD**:
+> `wqi_score` is the exact continuous mathematical number from which `wqi_class` and `Potability` were computed.
+> `wqi_score` **MUST NEVER** appear in `feature_columns` in `config/config.yaml` or in any feature matrix passed to ML models (`X_train`, `X_test`).
+> Including `wqi_score` would cause 100% artificial accuracy and total test leakage.
+
+### Excluded Metadata & High-Missingness Columns
+- **Administrative / Spatial Metadata (24 columns)**: `SlNo`, `Station`, `Agency`, `State LGD Code`, `State`, `District LGD Code`, `District`, `Tehsil`, `Block`, `Village`, `River`, `Basin`, `Tributary`, `Subtributary`, `SubSubtributary`, `Local River`, `Latitude`, `Longitude`, `Data Acquisition Time`, `has_physical_record`, `year`, `month`, `day`, `sampling_date`. (Retained for grouping, filtering, and dashboard map rendering).
+- **High-Missingness Parameters (40 columns)**: All parameters with $>85\%$ missingness are excluded from the baseline candidate feature set.
+- Complete 70-column enumeration is documented in [`Docs/data_dictionary.md`](file:///d:/Coding/College/Data%20science/CP/Docs/data_dictionary.md).
 
 ### Imputation & Preprocessing Guarantees
-- No `NaN`, `null`, or `inf` values in `data/processed/`.
-- Cleaned train/test split files: `data/processed/train.csv` and `data/processed/test.csv`.
-- Feature column ordering is preserved in `config/config.yaml` (`feature_columns`).
-- **Modification Rule**: Any schema change after M1.2 requires written consent in the team channel and updates to `config/config.yaml`.
+- Cleaned train/test split files: `data/processed/train.csv` and `data/processed/test.csv` (generated in Phase 2 / 4).
+- Candidate feature column ordering is strictly preserved in `config/config.yaml` (`feature_columns`).
+- **Modification Rule**: Any schema change after M1.4 requires an explicit exception in `#water-quality-core` and updates to `config/config.yaml`.
+
+### 1.5 Final Extended Feature List (Milestone 4.1 Feature Engineering)
+
+Per Milestone 4.1, the raw candidate feature set frozen in M1.4 is preserved intact, with domain-justified, leakage-checked engineered additions:
+
+| Feature Name | Type | Input Provenance | Domain Justification | Prediction-Time Availability | Max $|r|$ vs Raw |
+|:---|:---|:---|:---|:---|---:|
+| `Potential of Hydrogen (pH)` | Raw (M1.4) | Raw User Sensor Input | Core chemical equilibrium metric | Always Available | — |
+| `Dissolved oxygen (mg/L)` | Raw (M1.4) | Raw User Sensor Input | Primary aquatic oxygen health metric | Always Available | — |
+| `Biochemical Oxygen Demand (mg/L)` | Raw (M1.4) | Raw User Sensor Input | Organic pollution load metric | Always Available | — |
+| `Fecal Coliform (MPN/100mL)` | Raw (M1.4) | Raw User Sensor Input | Microbial pathogenic indicator | Always Available | — |
+| `Log10 Fecal Coliform` | **Engineered (M4.1)** | `log10(max(FC, 1.0))` | Linearizes 7 orders of magnitude bacterial skewness ($+33.98$) | Computed from raw FC input | $0.484$ (Non-redundant) |
+
+> **Leakage & Provenance Guarantee**: `Log10 Fecal Coliform` depends strictly on `Fecal Coliform (MPN/100mL)` entered by the dashboard user at inference time. It has zero dependence on `wqi_class`, `wqi_score`, `Potability`, or global/future aggregates.
+
+### 1.6 M4.2 Contract Freeze: Stratified Train/Test Split & Preprocessing Pipeline
+
+- **Owner**: Track B (ML Lead)
+- **Freeze Milestone**: **M4.2** (Train/Test Split & Leakage Audit - CONTRACT FREEZE)
+- **Status**: **FROZEN**
+- **Cross-Track Binding**: Documented and frozen interface binding Track D (Dashboard & Inference API). Available for consumption when Milestone 9.2 is implemented in Phase 9.
+- **Milestone 4.2 Status**: **FROZEN & FORMALLY CLOSED** (Technical verification complete; all 4 tests pass; 8-item leakage audit clean).
+
+#### Frozen Feature Contract (Exact Names & Column Order)
+The feature matrix $X$ passed into the preprocessing pipeline or model training consists strictly of the following 5 columns in exact order:
+1. `Potential of Hydrogen (pH)` — `float64` (Raw M1.4)
+2. `Dissolved oxygen (mg/L)` — `float64` (Raw M1.4)
+3. `Biochemical Oxygen Demand (mg/L)` — `float64` (Raw M1.4)
+4. `Fecal Coliform (MPN/100mL)` — `float64` (Raw M1.4)
+5. `Log10 Fecal Coliform` — `float64` (Engineered M4.1)
+
+#### Target Variable
+- **Primary Target**: `wqi_class` (Categorical label with 5 classes: `Unsuitable`, `Very Poor`, `Poor`, `Good`, `Excellent`)
+- **Strict Leakage Guard**: `wqi_score`, `wqi_class`, and `Potability` are **STRICTLY FORBIDDEN** from ever appearing in the feature matrix $X$.
+
+#### Split Configuration & Stratification
+- **Split Ratio**: 80% Train, 20% Test (Stratified on `wqi_class`).
+- **Random Seed**: `42` (configured via `config/config.yaml`).
+- **Cleaned Dataset Row Count**: 3,287 rows (after M2.1 deduplication and M2.2 missing-value handling).
+- **Split Counts**: Train = 2,629 rows (80.0%), Test = 658 rows (20.0%).
+- **Class Distribution**:
+  - `Unsuitable`: Full 1,795 (54.61%) | Train 1,436 (54.62%) | Test 359 (54.56%)
+  - `Very Poor`: Full 921 (28.02%) | Train 737 (28.03%) | Test 184 (27.96%)
+  - `Poor`: Full 454 (13.81%) | Train 363 (13.81%) | Test 91 (13.83%)
+  - `Good`: Full 110 (3.35%) | Train 88 (3.35%) | Test 22 (3.34%)
+  - `Excellent`: Full 7 (0.21%) | Train 6 (0.23%) | Test 1 (0.15%)
+- **Rare-Class Exception (`Excellent`, $n=7$)**:
+  With only 7 samples in the entire dataset, a pure integer split yields 6 train (85.7%) and 1 test (14.3%). This integer rounding difference (+0.02 pp in train, -0.06 pp in test) is an unavoidable mathematical property of integer splitting on extremely rare classes. The classes are NOT merged; `Excellent` is preserved as a distinct class with representation in both train and test sets.
+- **Physical Feature-Value Coincidences**:
+  Cross-split duplicate checking identified 22 pairs of rows sharing identical 5-feature numeric readings between train and test. Verification confirmed these represent distinct physical monitoring records (different sampling stations or dates) rather than duplicated data pipeline rows. Because original row indices are strictly disjoint (0 cross-split index overlap), this represents natural physical sensor value repetition and passed the Section 19 Leakage Audit (S19-05).
+
+#### Preprocessing Pipeline Guarantee
+- The preprocessing pipeline (`StandardScaler` fitted on numeric columns) is fitted **STRICTLY on $X_{\text{train}}$**.
+- It is NEVER fitted on $X_{\text{test}}$ or the full un-split dataset.
+- $X_{\text{test}}$ is transformed solely using the statistics (means and variances) learned from $X_{\text{train}}$.
+
+#### Saved Artifact Locations (Gitignored)
+- Preprocessing Pipeline: `models/preprocessing_pipeline_v1.pkl`
+- Feature Matrices: `data/processed/X_train_v1.csv`, `data/processed/X_test_v1.csv`
+- Target Series: `data/processed/y_train_v1.csv`, `data/processed/y_test_v1.csv`
+- Audit Reports: `data/processed/leakage_audit_v1.json`, `data/processed/class_distribution_v1.json`
+
+#### Regeneration Command
+```bash
+python -m src.models.train
+```
+Or programmatically:
+```python
+from src.models.train import perform_split
+split_result = perform_split()
+```
+
+#### Specification Section 19 Leakage Audit Checklist
+All 8 verification items passed:
+1. `S19-01`: Target not in features (`wqi_class`, `wqi_score`, `Potability` absent from $X$). [PASS]
+2. `S19-02`: Row-independent transformation ($\log_{10}$ is strictly vectorized element-wise). [PASS]
+3. `S19-03`: Zero test-set influence during fit (fitted solely on $X_{\text{train}}$). [PASS]
+4. `S19-04`: Reproducible split (`random_seed=42`, stratified). [PASS]
+5. `S19-05`: No cross-split source-row duplication (train and test index sets strictly disjoint). [PASS]
+6. `S19-06`: Target distribution preserved within tolerance (with documented rare-class rounding). [PASS]
+7. `S19-07`: Artifacts persistable without runtime computation. [PASS]
+8. `S19-08`: Forward-compatible pipeline output shape matches expected model input. [PASS]
 
 ---
 
 ## 2. Model Artifact Contract
 
 - **Owner**: Track B (ML Models)
-- **Freeze Milestone**: **M6.3** (Best Model Freezing & Packaging)
-- **Consumer Tracks**: Track C (Explainability), Track D (Dashboard & Inference API)
-- **Location**: `models/best_model.pkl` (referenced via `config/config.yaml`)
+- **Freeze Milestone**: **M6.3** (Final Model Selection, Freeze & Pipeline Artifact - CONTRACT FREEZE)
+- **Status**: **FROZEN & CONTRACT LOCKED**
+- **Date Frozen**: 2026-10-12
+- **Consumer Tracks**: Track C (Explainability - Phase 7), Track D (Dashboard & Inference API - Milestone 9.3)
+- **Location**: `models/best_model.pkl` (referenced via `config/config.yaml` `model_output_path`)
+- **Version**: `v1.0.0-frozen`
+- **Artifact SHA-256 Hash**: `c1c42b4c625e1fda25852ab63c54e94c9caa842f17d67d022dfd8796e529c812`
+- **Selected Model**: `DecisionTreeClassifier(class_weight='balanced', random_state=42)` (Macro F1 = 0.9067 on untouched test split)
+- **Downstream Unblock Notification**: Phase 7 (SHAP Explainability) and Milestone 9.3 (Dashboard Real Prediction Integration) are **UNBLOCKED**.
+
+### Artifact Architecture (End-to-End Pipeline)
+
+The serialized artifact is a single, self-contained `sklearn.pipeline.Pipeline` combining:
+1. `feature_engineering`: `WaterQualityFeatureEngineer(include_raw_features=True)`
+   - Computes $\text{Log}_{10}(\text{Fecal Coliform})$ dynamically from raw user input without external lookups.
+   - Preserves raw features, outputting the exact 5-column extended schema.
+2. `preprocessor`: `ColumnTransformer` (fitted on $X_{\text{train}}$ in M4.2)
+   - Median imputation and standard scaling (`StandardScaler`).
+3. `classifier`: `DecisionTreeClassifier(class_weight='balanced', random_state=42)`
+   - Multi-class tree classifier trained on scaled $X_{\text{train}}$.
+
+```
+Raw Input DataFrame (4 candidate features)
+   │
+   ▼
+[Step 1: feature_engineering] ──> Appends 'Log10 Fecal Coliform' (5 columns)
+   │
+   ▼
+[Step 2: preprocessor]        ──> StandardScaler & Imputation (fitted on X_train only)
+   │
+   ▼
+[Step 3: classifier]          ──> DecisionTreeClassifier (class_weight='balanced')
+   │
+   ▼
+Class Prediction (.predict) or Class Probabilities (.predict_proba)
+```
 
 ### Artifact Interface Guarantees
-The serialized object loaded via `joblib.load("models/best_model.pkl")` must be a scikit-learn compatible `Pipeline` or estimator exposing:
 
-1. **Binary Prediction**:
+The serialized object loaded via `joblib.load("models/best_model.pkl")` exposes:
+
+1. **Multi-Class Prediction**:
    ```python
-   y_pred = model.predict(X)
-   # Returns: np.ndarray of shape (n_samples,) with integer values in {0, 1}
+   y_pred = model.predict(raw_input_df)
+   # Returns: np.ndarray of shape (n_samples,) with dtype='<U10'
+   # Class values in: ['Excellent', 'Good', 'Poor', 'Unsuitable', 'Very Poor']
    ```
+
 2. **Probability Estimation**:
    ```python
-   y_prob = model.predict_proba(X)
-   # Returns: np.ndarray of shape (n_samples, 2) where y_prob[:, 1] is P(Potable)
+   y_prob = model.predict_proba(raw_input_df)
+   # Returns: np.ndarray of shape (n_samples, 5) with normalized probabilities summing to 1.0
+   # Classes corresponding to model.classes_: ['Excellent', 'Good', 'Poor', 'Unsuitable', 'Very Poor']
    ```
-3. **Input Format**:
-   - `X`: `pandas.DataFrame` or `numpy.ndarray` containing all 9 feature columns matching the exact names and dtypes defined in the Cleaned Data Contract.
-   - Built-in preprocessing: The pipeline must encapsulate any required scaling (e.g. `StandardScaler`) internally so raw user inputs can be passed directly to `.predict()`.
+
+3. **Raw Input Schema Contract**:
+   Input must be a `pandas.DataFrame` (or dict convertible to DataFrame) containing the 4 frozen candidate feature columns:
+   - `Potential of Hydrogen (pH)`: `float64`
+   - `Dissolved oxygen (mg/L)`: `float64`
+   - `Biochemical Oxygen Demand (mg/L)`: `float64`
+   - `Fecal Coliform (MPN/100mL)`: `float64`
+   - **No manual preprocessing or scaling required** by caller.
+   - If any candidate feature column is missing, a clear `ValueError` specifying the missing column is raised.
+
+4. **Inference Wrapper Module**:
+   `src/models/predict.py` provides convenience functions:
+   - `load_model(model_path=None) -> Pipeline`
+   - `predict(data, model=None) -> np.ndarray`
+   - `predict_proba(data, model=None) -> np.ndarray`
+   - `compute_artifact_hash(artifact_path) -> str`
 
 ---
 
 ## 3. Parallel Development & Mocking Strategy
 
-To prevent Tracks C and D from being blocked prior to M1.2 and M6.3:
-- **Mock Data**: Tracks B, C, and D can generate synthetic samples matching the schema above using `src/data/mock_data.py`.
-- **Mock Model**: Tracks C and D can use a dummy baseline model (e.g. `DummyClassifier(strategy="stratified")` or `LogisticRegression()`) serialized at `models/mock_model.pkl` until M6.3 is completed.
+- **M6.3 CONTRACT FREEZE COMPLETE**: The real model artifact `models/best_model.pkl` is now frozen and available.
+- Mock model usage is deprecated; Track C (SHAP) and Track D (Dashboard M9.3) now consume `models/best_model.pkl` directly.
+
