@@ -377,3 +377,5 @@ mark {
 .assessment button { padding: .65rem 1rem; border: 1px solid #cbdade; border-radius: .5rem; background: white; color: inherit; cursor: pointer; }
 .assessment button[type=submit] { background: #086f69; color: white; }
 .assessment [role=alert] { color: #963a18; }
+.signed-track { position: relative; height: 9px; margin-top: 7px; background: linear-gradient(to right,#edf2f2 49.8%,#84989c 50%,#edf2f2 50.2%); border-radius: 4px; }
+.signed-track i { position: absolute; height: 100%; border-radius: 3px; }

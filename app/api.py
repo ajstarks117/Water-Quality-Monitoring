@@ -3,6 +3,8 @@ import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
 
+from app.dashboard_prediction import predict_assessment
+from app.dashboard_input import frozen_model
 from app.mock_data import DASHBOARD
 from app.dashboard_input import FIELDS, InputError, preprocess_assessment
 
@@ -17,7 +19,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self.send_error(404)
 
     def do_POST(self):
-        if urlsplit(self.path).path != "/api/assessment/preprocess":
+        routes = {"/api/assessment/preprocess": preprocess_assessment,
+                  "/api/assessment/predict": predict_assessment}
+        handler = routes.get(urlsplit(self.path).path)
+        if handler is None:
             self.send_error(404)
             return
         try:
@@ -29,13 +34,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self.send_json(400, {"error": "Invalid assessment request."})
             return
         try:
-            result = preprocess_assessment(values)
+            result = handler(values)
         except InputError as exc:
             self.send_json(422, {"error": str(exc)})
             return
         except Exception:
-            self.log_error("Assessment preprocessing failed")
-            self.send_json(500, {"error": "Preprocessing is unavailable. Please try again."})
+            self.log_error("Assessment processing failed")
+            self.send_json(500, {"error": "Assessment processing is unavailable. Please try again."})
             return
         self.send_json(200, result)
 
@@ -49,5 +54,6 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
+    frozen_model()
     with ThreadingHTTPServer(("127.0.0.1", 18741), DashboardHandler) as server:
         server.serve_forever()

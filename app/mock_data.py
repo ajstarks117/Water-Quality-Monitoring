@@ -8,15 +8,6 @@ PARAMETERS = [
     ("Fecal Coliform (MPN/100mL)", "FC", "MPN/100mL", 320, "Above reference"),
 ]
 
-# INTEGRATION POINT M9.3: populate from predict and predict_proba using model.classes_.
-PROBABILITIES = {"Excellent": 0, "Good": 0, "Poor": .07, "Very Poor": .88, "Unsuitable": .05}
-
-# INTEGRATION POINT M9.3: project get_local_explanation onto the displayed fields.
-CONTRIBUTIONS = [
-    (PARAMETERS[2][0], .34), (PARAMETERS[3][0], .20), ("Log10 Fecal Coliform", .11),
-    (PARAMETERS[1][0], .07), (PARAMETERS[0][0], -.04),
-]
-
 # INTEGRATION POINT M9.4: use generate_decision_support for interpretations and actions.
 ACTIONS = [
     {"priority": "High", "recommendation": "Repeat BOD and dissolved oxygen measurements at the sampling site."},
@@ -29,10 +20,6 @@ DASHBOARD = {
     "stations": ["Demo station " + letter for letter in "ABCDEFGH"],
     "distribution": {"Excellent": 2, "Good": 12, "Poor": 38, "Very Poor": 68, "Unsuitable": 120},
     "parameters": [dict(name=n, label=l, unit=u, value=v, status=s) for n, l, u, v, s in PARAMETERS],
-    "prediction": {"predicted_class": "Very Poor", "class_probabilities": PROBABILITIES},
-    "explanation": {"base_value": .20, "feature_contributions": [
-        {"feature": name, "contribution": value} for name, value in CONTRIBUTIONS
-    ]},
     "decision": {"overall_priority": "High", "recommended_actions": {"action_items": ACTIONS}},
     "trends": [{"month": m, "value": v} for m, v in zip(
         ["Jan", "Feb", "Mar", "Apr", "May", "Jun"], [5.5, 5.1, 5.3, 4.9, 4.6, 4.8]

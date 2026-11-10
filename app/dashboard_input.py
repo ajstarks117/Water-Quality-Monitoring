@@ -34,8 +34,12 @@ def assessment_frame(values):
 
 
 @lru_cache(maxsize=1)
+def frozen_model():
+    return load_model()
+
+
 def preprocessing_steps():
-    return load_model()[:-1]
+    return frozen_model()[:-1]
 
 
 def preprocess_assessment(values):

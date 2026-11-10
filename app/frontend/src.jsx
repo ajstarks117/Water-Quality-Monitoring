@@ -148,7 +148,6 @@ function Overview({ d }) {
             <div className="mapLabel">
               <b>{d.station}</b>
               <small>{d.state}</small>
-              <span>{d.prediction.predicted_class}</span>
             </div>
           </div>
         </Card>
@@ -179,7 +178,7 @@ function Overview({ d }) {
           <p>Illustrative surface-water records for {d.state}.</p>
         </Card>
         <Card title="Model readiness">
-          <p>Mock predictions</p>
+          <p>Frozen decision tree</p>
           <a href="#prediction">View prediction →</a>
         </Card>
       </div>
@@ -208,48 +207,91 @@ function Bars({ rows, max = 1 }) {
     </div>
   );
 }
-function Detail({ id, d }) {
-  const prediction = d.prediction;
-  switch (id) {
-    case "prediction":
-      return (
-        <div className="grid">
-          <Card wide title="Class probabilities">
-            <Bars
-              rows={Object.entries(prediction.class_probabilities).map(
-                ([c, p]) => [c, p, Math.round(p * 100) + "%"],
-              )}
-            />
-          </Card>
-          <Card title="Predicted WQI class">
-            <strong>{prediction.predicted_class}</strong>
-            <a href="#explanation">Explore model evidence →</a>
-          </Card>
-        </div>
-      );
-    case "explanation":
-      return (
-        <Card
-          title="Local SHAP contributions"
-          note={
-            "Probability changes from a baseline of " + d.explanation.base_value
-          }
-        >
-          <Bars
-            rows={d.explanation.feature_contributions.map(
-              ({ feature, contribution: v }) => [
-                feature,
-                v,
-                (v > 0 ? "+" : "") + v,
-              ],
-            )}
-          />
-          <small>
-            Positive values increase the example class probability.
-            Contributions describe model behavior.
-          </small>
+function PredictionView({ result, explanationFirst }) {
+  if (!result)
+    return (
+      <Card title="No assessment yet">
+        <a href="#input">Enter measurements to generate a prediction →</a>
+      </Card>
+    );
+  const percent = (value) =>
+    new Intl.NumberFormat(undefined, {
+      style: "percent",
+      maximumFractionDigits: 2,
+    }).format(value);
+  const shap = (
+    <Card
+      title="Local SHAP contributions"
+      note={`Baseline model probability: ${percent(result.base_value)}`}
+    >
+      <div className="bars">
+        {result.contributions.map(({ feature, contribution }) => (
+          <div key={feature}>
+            <div className="row">
+              <span>{feature}</span>
+              <b>
+                {contribution > 0 ? "+" : ""}
+                {contribution.toFixed(4)}
+              </b>
+            </div>
+            <div className="signed-track">
+              <i
+                style={{
+                  width: Math.abs(contribution) * 50 + "%",
+                  [contribution < 0 ? "right" : "left"]: "50%",
+                  background: contribution < 0 ? "#087d75" : "#3469dd",
+                }}
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+      <small>{result.caveat}</small>
+    </Card>
+  );
+  const probabilities = (
+    <Card title="Class probabilities">
+      <Bars
+        rows={Object.entries(result.class_probabilities).map(([name, p]) => [
+          name,
+          p,
+          percent(p),
+        ])}
+      />
+    </Card>
+  );
+  return (
+    <>
+      <div className="grid">
+        <Card title="Predicted WQI class">
+          <strong>{result.predicted_class}</strong>
+          <p>Model probability: {percent(result.model_probability)}</p>
+          {result.uncertain && (
+            <p role="status">
+              Prediction is uncertain. Consider additional measurement or
+              laboratory verification.
+            </p>
+          )}
         </Card>
-      );
+        <Card title="Assessment measurements">
+          {Object.entries(result.measurements).map(([name, v]) => (
+            <div className="row" key={name}>
+              <span>{name}</span>
+              <b>{v}</b>
+            </div>
+          ))}
+        </Card>
+      </div>
+      <div className="grid">
+        {explanationFirst ? shap : probabilities}
+        {explanationFirst ? probabilities : shap}
+      </div>
+      <a href="#input">Edit measurements →</a>
+    </>
+  );
+}
+function Detail({ id, d }) {
+  switch (id) {
     case "parameters":
       return (
         <Card title="Measurement review">
@@ -297,6 +339,8 @@ function currentPage() {
 }
 function App() {
   const [page, setPage] = useState(currentPage);
+  const [prediction, setPrediction] = useState(null);
+  const liveResult = ["prediction", "explanation"].includes(page[0]);
   const [data, setData] = useState(null);
   const [error, setError] = useState(false);
   const [attempt, retry] = useState(0);
@@ -347,13 +391,27 @@ function App() {
       <main>
         <header>
           <Database size={17} /> CPCB surface-water dataset{" "}
-          <span className="badge">{page[0] === "input" ? "Manual entry" : data?.mode || "Demo"}</span>
-          {page[0] !== "input" && <b>{data?.state}</b>}
+          <span className="badge">
+            {page[0] === "input"
+              ? "Manual entry"
+              : liveResult
+                ? "Live model"
+                : data?.mode || "Demo"}
+          </span>
+          {!liveResult && page[0] !== "input" && <b>{data?.state}</b>}
         </header>
         <article>
           <h1>{page[1]}</h1>
           <p className="intro">{page[3]}</p>
-          {page[0] === "input" ? <Assessment /> : error ? (
+          <div hidden={page[0] !== "input"}>
+            <Assessment onPrediction={setPrediction} />
+          </div>
+          {page[0] === "input" ? null : liveResult ? (
+            <PredictionView
+              result={prediction}
+              explanationFirst={page[0] === "explanation"}
+            />
+          ) : error ? (
             <section role="alert">
               Dashboard data is unavailable.{" "}
               <button onClick={() => retry(attempt + 1)}>Retry</button>
