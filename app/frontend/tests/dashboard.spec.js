@@ -4,9 +4,9 @@ const sections = [
   ["Water Quality Assessment", "Measurement inputs"],
   ["Prediction", "No assessment yet"],
   ["Explainability", "No assessment yet"],
-  ["Parameter Analysis", "Measurement review"],
-  ["Decision Support", "Recommended actions"],
-  ["Historical Trends", "Dissolved oxygen"],
+  ["Parameter Analysis", "No assessment yet"],
+  ["Decision Support", "No assessment yet"],
+  ["Historical Trends", "Measurements over time"],
 ];
 for (const width of [390, 1440]) {
   test("all seven sections render at width " + width, async ({ page }) => {
@@ -131,3 +131,71 @@ for (const uncertain of [false, true]) {
     },
   );
 }
+test("walk four assessments through all seven sections", async ({ page }) => {
+  const errors = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto("/");
+  const nav = (name) =>
+    page
+      .getByRole("navigation")
+      .getByRole("link", { name, exact: true })
+      .click();
+  for (const [values, expectedClass, priority] of [
+    [[7, 14, 0, 1], "Good", "None"],
+    [[7, 6, 3, 200], "Very Poor", "None"],
+    [[7, 3, 8, 1500], "Unsuitable", "High"],
+    [[6.5, 4.9, 3.1, 250], null, "High"],
+  ]) {
+    await nav("Overview");
+    await expect(
+      page.getByRole("heading", { name: "Water-station distribution" }),
+    ).toBeVisible();
+    await nav("Water Quality Assessment");
+    for (const [i, v] of values.entries())
+      await page.getByRole("spinbutton").nth(i).fill(String(v));
+    await page.getByRole("button", { name: "Generate prediction" }).click();
+    await expect(
+      page.getByRole("heading", { name: "Predicted WQI class" }),
+    ).toBeVisible();
+    if (expectedClass)
+      await expect(page.locator("article strong").first()).toHaveText(
+        expectedClass,
+      );
+    await nav("Explainability");
+    await expect(
+      page.getByRole("heading", { name: "Local SHAP contributions" }),
+    ).toBeVisible();
+    await nav("Parameter Analysis");
+    await expect(page.locator("tbody tr")).toHaveCount(5);
+    await nav("Decision Support");
+    for (const name of [
+      "Assessment context",
+      "Contributing parameters",
+      "Parameter interpretation",
+      "Recommended actions",
+    ])
+      await expect(
+        page.getByRole("heading", { name, exact: true }),
+      ).toBeVisible();
+    await expect(
+      page.getByText("Priority · " + priority, { exact: true }),
+    ).toBeVisible();
+    console.log(
+      "Walkthrough",
+      values.join(", "),
+      await page.locator(".decision-grid strong").innerText(),
+      priority,
+      await page.locator(".decision-grid .card").nth(2).innerText(),
+    );
+    await nav("Historical Trends");
+    await page.getByLabel("State", { exact: true }).selectOption("Maharashtra");
+    await page
+      .getByLabel("Station", { exact: true })
+      .selectOption({ index: 1 });
+    await expect(
+      page.getByRole("heading", { name: "Monthly class distribution" }),
+    ).toBeVisible();
+    await expect(page.getByText(/^[1-9]\d* dated observations$/)).toBeVisible();
+  }
+  expect(errors).toEqual([]);
+});

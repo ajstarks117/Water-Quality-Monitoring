@@ -379,3 +379,10 @@ mark {
 .assessment [role=alert] { color: #963a18; }
 .signed-track { position: relative; height: 9px; margin-top: 7px; background: linear-gradient(to right,#edf2f2 49.8%,#84989c 50%,#edf2f2 50.2%); border-radius: 4px; }
 .signed-track i { position: absolute; height: 100%; border-radius: 3px; }
+.filters, .decision-grid { display:grid; gap:1rem; }
+.filters { grid-template-columns: repeat(auto-fit,minmax(min(100%,13rem),1fr)); margin-bottom:1rem; }
+.filters select { display:block; width:100%; margin-top:.4rem; padding:.65rem; border:1px solid #ccdce1; border-radius:.5rem; background:white; }
+.decision-grid { grid-template-columns:repeat(auto-fit,minmax(min(100%,23rem),1fr)); }
+.table-scroll { overflow:auto; }
+.table-scroll table { border-collapse:collapse; width:100%; text-align:left; }
+.table-scroll td,.table-scroll th { padding:.7rem; border-bottom:1px solid #dde7e9; }

@@ -5,7 +5,8 @@ from urllib.parse import urlsplit
 
 from app.dashboard_prediction import predict_assessment
 from app.dashboard_input import frozen_model
-from app.mock_data import DASHBOARD
+from app.dashboard_history import historical_dashboard
+from src.data.load_data import DataIngestionError
 from app.dashboard_input import FIELDS, InputError, preprocess_assessment
 
 
@@ -14,7 +15,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if urlsplit(self.path).path == "/api/assessment/schema":
             self.send_json(200, FIELDS)
         elif urlsplit(self.path).path == "/api/dashboard":
-            self.send_json(200, DASHBOARD)
+            try:
+                history = historical_dashboard()
+            except (OSError, DataIngestionError):
+                self.send_json(503, {"error": "Historical observations are unavailable."})
+                return
+            self.send_json(200, history)
         else:
             self.send_error(404)
 
