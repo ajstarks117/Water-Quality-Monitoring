@@ -368,3 +368,12 @@ mark {
     left: 35%;
   }
 }
+
+.assessment { align-items: start; }
+.assessment fieldset { border: 0; margin: 1rem 0 0; padding: 0; }
+.assessment label { display: block; margin-bottom: 1rem; }
+.assessment label small { margin-top: .3rem; }
+.form-actions { display: flex; flex-wrap: wrap; gap: .7rem; justify-content: space-between; }
+.assessment button { padding: .65rem 1rem; border: 1px solid #cbdade; border-radius: .5rem; background: white; color: inherit; cursor: pointer; }
+.assessment button[type=submit] { background: #086f69; color: white; }
+.assessment [role=alert] { color: #963a18; }

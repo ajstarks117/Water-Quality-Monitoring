@@ -1,3 +1,4 @@
+import Assessment from "./Assessment";
 import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
@@ -25,7 +26,7 @@ const pages = [
     "input",
     "Water Quality Assessment",
     ClipboardCheck,
-    "Review the four raw measurements supplied for this example.",
+    "Enter four laboratory measurements to prepare a surface-water assessment.",
   ],
   [
     "prediction",
@@ -210,20 +211,6 @@ function Bars({ rows, max = 1 }) {
 function Detail({ id, d }) {
   const prediction = d.prediction;
   switch (id) {
-    case "input":
-      return (
-        <Card title="Sample inputs" note={d.station + " · fixed example"}>
-          <div className="inputs">
-            {d.parameters.map((p) => (
-              <label key={p.name}>
-                {p.name}
-                <input readOnly value={p.value} />
-              </label>
-            ))}
-          </div>
-          <a href="#prediction">View example prediction →</a>
-        </Card>
-      );
     case "prediction":
       return (
         <div className="grid">
@@ -360,13 +347,13 @@ function App() {
       <main>
         <header>
           <Database size={17} /> CPCB surface-water dataset{" "}
-          <span className="badge">{data?.mode || "Demo"}</span>
-          <b>{data?.state}</b>
+          <span className="badge">{page[0] === "input" ? "Manual entry" : data?.mode || "Demo"}</span>
+          {page[0] !== "input" && <b>{data?.state}</b>}
         </header>
         <article>
           <h1>{page[1]}</h1>
           <p className="intro">{page[3]}</p>
-          {error ? (
+          {page[0] === "input" ? <Assessment /> : error ? (
             <section role="alert">
               Dashboard data is unavailable.{" "}
               <button onClick={() => retry(attempt + 1)}>Retry</button>

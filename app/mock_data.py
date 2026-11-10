@@ -1,6 +1,6 @@
 """Illustrative dashboard fixtures. No model execution or observed station coordinates."""
 
-# INTEGRATION POINT M9.2: accept four raw columns and validate via predict.validate_raw_features.
+# Display-only station observations for the overview and parameter analysis.
 PARAMETERS = [
     ("Potential of Hydrogen (pH)", "pH", "pH", 7.2, "Within reference"),
     ("Dissolved oxygen (mg/L)", "DO", "mg/L", 4.8, "Below reference"),

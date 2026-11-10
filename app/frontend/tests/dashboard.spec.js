@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 const sections = [
   ["Overview", "Water-station distribution"],
-  ["Water Quality Assessment", "Sample inputs"],
+  ["Water Quality Assessment", "Measurement inputs"],
   ["Prediction", "Class probabilities"],
   ["Explainability", "Local SHAP contributions"],
   ["Parameter Analysis", "Measurement review"],
@@ -31,19 +31,27 @@ for (const width of [390, 1440]) {
     expect(errors).toEqual([]);
   });
 }
-test("Python fixture supplies the displayed input and prediction", async ({
-  page,
-  request,
-}) => {
-  const response = await request.get("/api/dashboard");
-  expect(response.ok()).toBe(true);
-  const data = await response.json();
+test("assessment validates missing, impossible and valid samples", async ({page, request}) => {
+  const fields = await (await request.get("/api/assessment/schema")).json();
   await page.goto("/#input");
-  await expect(page.getByRole("textbox")).toHaveCount(data.parameters.length);
-  for (const p of data.parameters)
-    await expect(page.getByLabel(p.name)).toHaveValue(String(p.value));
-  await page.getByRole("link", { name: "View example prediction" }).click();
-  await expect(page.locator("strong")).toHaveText(
-    data.prediction.predicted_class,
-  );
+  const inputs = page.getByRole("spinbutton");
+  await expect(inputs).toHaveCount(4);
+  const submit = page.getByRole("button", {name:"Validate and preprocess"});
+  await submit.click();
+  await expect(page.getByRole("alert")).toHaveText("Please provide all required parameters.");
+  for (const [i, field] of fields.entries()) {
+    const input = inputs.nth(i);
+    await expect(input).toHaveAccessibleName(new RegExp(field.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    await expect(input).toHaveAttribute("min", String(field.min));
+    await expect(input).toHaveAttribute("max", String(field.max));
+    await input.fill(String([20, 4.8, 6.2, 320][i]));
+  }
+  await submit.click();
+  await expect(page.getByRole("alert")).toHaveText("Input value is outside the allowed data range. Please verify the measurement.");
+  await inputs.first().fill("7.2");
+  await submit.click();
+  await expect(page.getByRole("status")).toHaveText("Preprocessing complete. 4 measurements produced 5 model features.");
+  await page.getByRole("button", {name:"Reset"}).click();
+  await expect(inputs.first()).toHaveValue("");
+  await expect(page.getByRole("status")).not.toContainText("Preprocessing complete");
 });
