@@ -27,6 +27,12 @@ export default function Assessment({ onPrediction, history }) {
     event.preventDefault();
     const predict = event.nativeEvent.submitter?.value === "predict";
     onPrediction(null);
+    if (missing.length || outside.length) {
+      setResult(null);
+      setError(missing.length ? "Please provide all required parameters." :
+        "Input value is outside the allowed data range. Please verify the measurement.");
+      return;
+    }
     setBusy(true);
     setError("");
     setResult(null);
