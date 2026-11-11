@@ -348,7 +348,13 @@ function App() {
           </div>
           {page[0] === "input" ? null : prediction &&
             ["parameters", "decisions"].includes(page[0]) ? (
-            <DecisionView page={page[0]} result={prediction} Card={Card} />
+            <DecisionView
+              page={page[0]}
+              result={prediction}
+              history={data}
+              historyError={error}
+              Card={Card}
+            />
           ) : liveResult ? (
             <PredictionView result={prediction} />
           ) : page[0] === "evaluation" ? (

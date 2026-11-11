@@ -23,3 +23,9 @@ The final sample triggered the DO and BOD rules. The pH and coliform boundary va
 **Known limitations.** The frozen model emits a scikit-learn version warning (artifact 1.9.0, runtime 1.5.2). Every tree leaf returns a top-class model probability of 1.0, so the provisional 0.60 uncertainty cutoff was exercised with a controlled response. Historical views require the locally generated labeled CSV.
 
 The Phase 9 technical checkpoint is complete on the feature branch. The final implementation is tracked in [PR #2](https://github.com/ajstarks117/Water-Quality-Monitoring/pull/2).
+
+## Final Figma-aligned dashboard verification
+
+M9.1 added geographic station inspection, dataset filters and the report-backed model evaluation page. M9.2 aligned the assessment panels and added entry from an actual historical record. M9.3 added selectable signed attributions, the saved global SHAP summary and the combined results layout. M9.4 added historical parameter distributions, individual rule interpretations, monthly class breakdowns, date filtering and sampling coverage.
+
+The production build, 42 targeted Python tests and all seven dashboard browser tests passed. Four submissions exercised the live prediction-to-decision path. A separate visual pass inspected the populated assessment, prediction, parameter, decision and trend screens at desktop width and verified four populated analytical views fit a 390 px viewport. In the final browser suite the checked live prediction and SHAP result rendered in 172 ms.

@@ -177,6 +177,11 @@ test("walk four assessments through all seven sections", async ({ page }) => {
     ).toBeVisible();
     await nav("Parameter Analysis");
     await expect(page.locator("tbody tr")).toHaveCount(5);
+    await page.getByLabel("Distribution state").selectOption("Uttar Pradesh");
+    await expect(page.locator(".histogram i")).toHaveCount(7);
+    await expect(
+      page.getByRole("columnheader", { name: "Interpretation", exact: true }),
+    ).toBeVisible();
     await nav("Decision Support");
     for (const name of [
       "Assessment context",
@@ -207,6 +212,14 @@ test("walk four assessments through all seven sections", async ({ page }) => {
     ).toBeVisible();
     await expect(page.getByText(/^[1-9]\d* dated observations$/)).toBeVisible();
   }
+  const through = page.getByLabel("Sampling through");
+  const last = await through.getAttribute("max");
+  await through.fill(last);
+  await page.getByRole("button", { name: "Reset filters" }).click();
+  await expect(through).toHaveValue("");
+  await expect(page.getByLabel("State", { exact: true })).toHaveValue("");
+  await page.locator(".period summary").first().click();
+  await expect(page.locator(".period[open] .row")).toHaveCount(5);
   expect(errors).toEqual([]);
 });
 test("overview filters, station selection and evaluation use real data", async ({
