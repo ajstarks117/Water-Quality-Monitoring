@@ -1,3 +1,5 @@
+import Overview from "./Overview";
+import Evaluation from "./Evaluation";
 import DecisionView from "./DecisionView";
 import { HistoricalTrends } from "./HistoricalTrends";
 import Assessment from "./Assessment";
@@ -32,15 +34,9 @@ const pages = [
   ],
   [
     "prediction",
-    "Prediction",
+    "Prediction & Explainability",
     ScanLine,
     "Explore the predicted class and its probability distribution.",
-  ],
-  [
-    "explanation",
-    "Explainability",
-    ChartBar,
-    "Inspect the contributions to the predicted class probability.",
   ],
   [
     "parameters",
@@ -55,13 +51,18 @@ const pages = [
     "Review follow-up actions for the selected sample.",
   ],
   [
+    "evaluation",
+    "Model Evaluation",
+    ChartBar,
+    "Compare candidate models on the project evaluation split.",
+  ],
+  [
     "trends",
     "Historical Trends",
     History,
     "Compare historical measurements and WQI classes by month, state, and station.",
   ],
 ];
-const colors = ["#5aab9b", "#0e7974", "#e3b053", "#cf803b", "#5366a4"];
 function Card({ title, note, children, wide = false }) {
   return (
     <section className={wide ? "card wide" : "card"}>
@@ -69,99 +70,6 @@ function Card({ title, note, children, wide = false }) {
       {note && <small>{note}</small>}
       {children}
     </section>
-  );
-}
-function Overview({ d }) {
-  const counts = Object.entries(d.distribution);
-  const total = counts.reduce((sum, [, n]) => sum + n, 0);
-  let angle = 0;
-  const stops = counts.map(([, n], i) => {
-    const start = angle;
-    angle += (n / total) * 360;
-    return colors[i] + " " + start + "deg " + angle + "deg";
-  });
-  const mapped = d.stations.filter(
-    (s) => Number.isFinite(s.Latitude) && Number.isFinite(s.Longitude),
-  );
-  const xs = mapped.map((s) => s.Longitude),
-    ys = mapped.map((s) => s.Latitude);
-  const west = Math.min(...xs),
-    south = Math.min(...ys);
-  const width = Math.max(...xs) - west || 1,
-    height = Math.max(...ys) - south || 1;
-  return (
-    <>
-      <div className="metrics">
-        {[
-          ["Total valid observations", total],
-          ["Unique stations", d.stations.length],
-          ["Parameters analyzed", d.features.length],
-          ["Supported target classes", counts.length],
-        ].map(([label, n]) => (
-          <section className="card" key={label}>
-            <small>{label}</small>
-            <strong>{n}</strong>
-          </section>
-        ))}
-      </div>
-      <div className="grid">
-        <Card
-          wide
-          title="Water-station distribution"
-          note="Station locations by longitude and latitude"
-        >
-          <div className="map">
-            {mapped.map((s) => (
-              <span
-                className="dot"
-                key={s.State + s.Station}
-                title={s.Station + ", " + s.State}
-                style={{
-                  left: 4 + (90 * (s.Longitude - west)) / width + "%",
-                  top: 94 - (90 * (s.Latitude - south)) / height + "%",
-                }}
-              />
-            ))}
-          </div>
-        </Card>
-        <Card title="Class distribution" note="Labeled CPCB observations">
-          <div
-            className="ring"
-            style={{ background: "conic-gradient(" + stops.join(",") + ")" }}
-          >
-            <b>
-              {total}
-              <small>records</small>
-            </b>
-          </div>
-          {counts.map(([c, n], i) => (
-            <div className="legend" key={c}>
-              <i style={{ background: colors[i] }} />
-              {c}
-              <b>{n}</b>
-            </div>
-          ))}
-        </Card>
-      </div>
-      <div className="bottom">
-        <Card title="Sampling coverage">
-          {[...new Set(d.stations.map((s) => s.State))].map((state) => (
-            <p key={state}>
-              {state} · {d.stations.filter((s) => s.State === state).length}{" "}
-              stations
-            </p>
-          ))}
-        </Card>
-        <Card title="Data source">
-          <p>CPCB surface-water monitoring records</p>
-          <a href="#trends">Explore historical measurements →</a>
-        </Card>
-        <Card title="Model readiness">
-          <p>Frozen decision tree</p>
-          <a href="#prediction">View prediction →</a>
-        </Card>
-      </div>
-    </>
   );
 }
 function Bars({ rows, max = 1 }) {
@@ -270,9 +178,11 @@ function PredictionView({ result, explanationFirst }) {
   );
 }
 function currentPage() {
-  return pages.find(([id]) => "#" + id === location.hash) || pages[0];
+  const hash = location.hash === "#explanation" ? "#prediction" : location.hash;
+  return pages.find(([id]) => "#" + id === hash) || pages[0];
 }
 function App() {
+  const [state, setState] = useState("");
   const [page, setPage] = useState(currentPage);
   const [prediction, setPrediction] = useState(null);
   const liveResult = [
@@ -327,6 +237,14 @@ function App() {
           <b>Surface-water monitoring</b>
           <small>Historical water quality in India</small>
         </div>
+        <details className="dataset-info">
+          <summary>Dataset information</summary>
+          <p>
+            CPCB labeled surface-water observations from Maharashtra and Uttar
+            Pradesh.
+          </p>
+          <a href="#trends">Explore sampling history →</a>
+        </details>
       </aside>
       <main>
         <header>
@@ -336,8 +254,29 @@ function App() {
               ? "Manual entry"
               : liveResult
                 ? "Live model"
-                : "Historical records"}
+                : page[0] === "evaluation"
+                  ? "Evaluation report"
+                  : data
+                    ? "Dataset connected"
+                    : error
+                      ? "Dataset unavailable"
+                      : "Loading dataset"}
           </span>
+          {page[0] === "overview" && data && (
+            <label className="region-picker">
+              State{" "}
+              <select
+                aria-label="State"
+                value={state}
+                onChange={(e) => setState(e.target.value)}
+              >
+                <option value="">All states</option>
+                {[...new Set(data.stations.map((s) => s.State))].map((s) => (
+                  <option key={s}>{s}</option>
+                ))}
+              </select>
+            </label>
+          )}
         </header>
         <article>
           <h1>{page[1]}</h1>
@@ -353,6 +292,8 @@ function App() {
               result={prediction}
               explanationFirst={page[0] === "explanation"}
             />
+          ) : page[0] === "evaluation" ? (
+            <Evaluation Card={Card} />
           ) : error ? (
             <section role="alert">
               Dashboard data is unavailable.{" "}
@@ -361,7 +302,7 @@ function App() {
           ) : !data ? (
             <p role="status">Loading sample data…</p>
           ) : page[0] === "overview" ? (
-            <Overview d={data} />
+            <Overview data={data} state={state} Card={Card} />
           ) : (
             <HistoricalTrends data={data} Card={Card} Bars={Bars} />
           )}

@@ -386,3 +386,11 @@ mark {
 .table-scroll { overflow:auto; }
 .table-scroll table { border-collapse:collapse; width:100%; text-align:left; }
 .table-scroll td,.table-scroll th { padding:.7rem; border-bottom:1px solid #dde7e9; }
+.station-map { height:clamp(220px,22vw,335px); margin:12px 0; border-radius:9px; z-index:0; background:#edf3f1; }
+.station-picker { display:flex; gap:.5rem; align-items:center; font-size:.82rem; }
+.station-picker select,.region-picker select { border:1px solid #cbdade; background:white; border-radius:7px; padding:.4rem; color:inherit; max-width:100%; min-width:0; }
+.region-picker { margin-left:auto; font-size:.85rem; }
+.evaluation-matrix { max-width:100%; height:auto; }
+.card + .card:has(.table-scroll) { margin:12px 0; }
+.evaluation-panels { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,16rem),1fr)); gap:15px; }
+.map-reset { float:right; margin-left:.5rem; background:white; border:1px solid #cbdade; border-radius:6px; padding:.4rem; cursor:pointer; }.dataset-info {font-size:.85rem;color:#355160}.dataset-info summary {cursor:pointer}

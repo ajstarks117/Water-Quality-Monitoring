@@ -13,9 +13,16 @@ def _read_history(path, modified):
     dates = pd.to_datetime(frame["sampling_date"], format="%Y-%m-%d", errors="coerce")
     records = frame[["State", "Station", "wqi_class", *features]].copy()
     records.columns = ["state", "station", "category", *features]
+    records["date"] = dates.dt.strftime("%Y-%m-%d")
     records["month"] = dates.dt.strftime("%Y-%m")
-    stations = (frame.groupby(["State", "Station"])[["Latitude", "Longitude"]]
-                .median().reset_index())
+    keys = ["State", "Station"]
+    # Keep a coordinate pair from one real observation, including when a station moved.
+    located = frame["Latitude"].between(-90, 90) & frame["Longitude"].between(-180, 180)
+    coordinates = (frame.loc[located, keys + ["Latitude", "Longitude"]]
+                   .assign(sampled=dates[located]).sort_values("sampled", na_position="first")
+                   .drop_duplicates(keys, keep="last"))
+    stations = (frame[keys].drop_duplicates().sort_values(keys)
+                .merge(coordinates.drop(columns="sampled"), on=keys, how="left"))
     return {
         "features": features,
         "stations": stations.astype(object).where(stations.notna(), None).to_dict("records"),
