@@ -394,3 +394,6 @@ mark {
 .card + .card:has(.table-scroll) { margin:12px 0; }
 .evaluation-panels { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,16rem),1fr)); gap:15px; }
 .map-reset { float:right; margin-left:.5rem; background:white; border:1px solid #cbdade; border-radius:6px; padding:.4rem; cursor:pointer; }.dataset-info {font-size:.85rem;color:#355160}.dataset-info summary {cursor:pointer}
+.card-stack {display:grid;gap:1rem;align-content:start;min-width:0}
+@media(min-width:761px){.grid.assessment{grid-template-columns:minmax(0,1.35fr) minmax(0,1fr)}}
+.assessment .form-actions button[value=predict]{background:#255edb;color:white}

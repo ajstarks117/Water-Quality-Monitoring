@@ -282,7 +282,7 @@ function App() {
           <h1>{page[1]}</h1>
           <p className="intro">{page[3]}</p>
           <div hidden={page[0] !== "input"}>
-            <Assessment onPrediction={setPrediction} />
+            <Assessment onPrediction={setPrediction} history={data} />
           </div>
           {page[0] === "input" ? null : prediction &&
             ["parameters", "decisions"].includes(page[0]) ? (
