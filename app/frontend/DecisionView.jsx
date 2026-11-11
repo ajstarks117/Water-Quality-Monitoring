@@ -1,4 +1,5 @@
 import ParameterDistribution from "./ParameterDistribution";
+import AssessmentComparison from "./AssessmentComparison";
 import React from "react";
 
 export default function DecisionView({
@@ -91,6 +92,7 @@ export default function DecisionView({
     <div className="decision-grid">
       <Card title="Assessment context">
         <strong>{d.prediction.predicted_class}</strong>
+        <AssessmentComparison result={result} />
         <mark>Priority · {d.overall_priority}</mark>
       </Card>
       <Card
