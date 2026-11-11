@@ -6,12 +6,12 @@ The five dashboard acceptance cases POST four raw measurements to the same HTTP 
 
 | Case | Result |
 | --- | --- |
-| TC-10.1-01, GitHub Actions on a pull request | [PR 4](https://github.com/ajstarks117/Water-Quality-Monitoring/pull/4) triggered the workflow. GitHub reported an account billing lock before runner startup. A successful hosted run is pending. |
+| TC-10.1-01, GitHub Actions on a pull request | Passed on [PR 4](https://github.com/ajstarks117/Water-Quality-Monitoring/pull/4). The [Linux runner](https://github.com/ajstarks117/Water-Quality-Monitoring/actions/runs/43051239708) reported 199 passed, 23 deselected and 398 warnings in 17.00 seconds. |
 | TC-10.1-02, all five predicted classes | Five dashboard API cases passed locally. |
 | TC-10.1-03, full suite from repository root | 222 passed, zero failures, 1,359 warnings in 83.93 seconds (local Windows run). |
 | Standard CI selection in a clean checkout with generated inputs | 199 passed, zero failures, 23 official-data cases deselected, 1,302 warnings in 63.96 seconds (local Windows run). |
 
-GitHub branch protection on main requires the up-to-date **Dashboard pytest** check from GitHub Actions and applies to administrators. After the account lock clears, rerun the check on the current PR head before merging.
+GitHub branch protection on main requires the up-to-date **Dashboard pytest** check from GitHub Actions and applies to administrators.
 
 ## Dataset coverage
 
