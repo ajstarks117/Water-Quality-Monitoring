@@ -189,6 +189,7 @@ function PredictionView({ result }) {
         <Card title="Predicted WQI class">
           <strong>{result.predicted_class}</strong>
           <p>Model probability: {percent(result.model_probability)}</p>
+          {result.screening_warnings?.map(message => <p key={message} role="status">{message}</p>)}
           {result.uncertain && (
             <p role="status">
               Prediction is uncertain. Consider additional measurement or
