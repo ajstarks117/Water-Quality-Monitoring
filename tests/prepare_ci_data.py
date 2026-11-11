@@ -35,7 +35,8 @@ def main():
         "sampling_date": pd.date_range("2021-01-01", periods=n).strftime("%Y-%m-%d"),
     })
     frame["year"] = frame["sampling_date"].str[:4].astype(int)
-    frame.loc[::23, coliform] = np.nan
+    frame["Data Acquisition Time"] = frame["sampling_date"]
+    frame.loc[22::23, coliform] = np.nan
     frame["wqi_score"] = frame.apply(compute_wqi_score, axis=1)
     frame["wqi_class"] = frame["wqi_score"].map(assign_wqi_class)
     frame["Potability"] = frame["wqi_score"].map(assign_potability)
