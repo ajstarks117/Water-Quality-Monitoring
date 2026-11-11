@@ -120,8 +120,9 @@ def synthetic_state_csvs(tmp_path):
 # ────────────────────────────────────────────────────────────────────────
 # TC-1: All six official files are located (integration)
 # ────────────────────────────────────────────────────────────────────────
-@pytest.mark.skipif(not OFFICIAL_FILES_PRESENT, reason="Official CPCB files not in data/raw/")
 class TestOfficialFileLocation:
+    @pytest.mark.skipif(not OFFICIAL_FILES_PRESENT, reason="Official CPCB files not in data/raw/")
+    @pytest.mark.official_cpcb
     def test_tc01_all_six_files_located(self):
         """All six official CPCB raw CSV files are found and non-empty."""
         file_map = locate_cpcb_raw_files(RAW_DIR)
@@ -141,6 +142,7 @@ class TestOfficialFileLocation:
 # TC-2: No duplicate (Station, Data Acquisition Time) keys in source data
 # ────────────────────────────────────────────────────────────────────────
 @pytest.mark.skipif(not OFFICIAL_FILES_PRESENT, reason="Official CPCB files not in data/raw/")
+@pytest.mark.official_cpcb
 class TestSourceKeyUniqueness:
     @pytest.mark.parametrize("state", ["maharashtra", "uttar_pradesh"])
     @pytest.mark.parametrize("cat", ["physical", "biological", "chemical"])
@@ -283,6 +285,7 @@ class TestAccountingConsistency:
 # Integration Tests — run against actual CPCB data
 # ────────────────────────────────────────────────────────────────────────
 @pytest.mark.skipif(not OFFICIAL_FILES_PRESENT, reason="Official CPCB files not in data/raw/")
+@pytest.mark.official_cpcb
 class TestIntegrationFullPipeline:
     def test_full_pipeline_produces_valid_output(self, tmp_path):
         """Full pipeline produces a non-empty table with zero duplicate keys."""

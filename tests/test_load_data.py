@@ -44,6 +44,7 @@ def base_config() -> dict:
 # ---------------------------------------------------------------------------
 # TC-1.5-01: Happy Path — Ingest Valid Labeled Dataset
 # ---------------------------------------------------------------------------
+@pytest.mark.official_cpcb
 def test_tc_1_5_01_load_valid_labeled_dataset(valid_labeled_csv_path: Path, base_config: dict):
     """TC-1.5-01: Call load_raw_data(path) and verify returned DataFrame matches frozen contract."""
     df = load_raw_data(valid_labeled_csv_path, config=base_config, validate=True)
@@ -175,6 +176,7 @@ def test_empty_dataframe_raises_schema_validation_error(base_config: dict):
     assert "Input DataFrame is empty" in str(exc_info.value)
 
 
+@pytest.mark.official_cpcb
 def test_logging_audit_output(valid_labeled_csv_path: Path, base_config: dict, caplog):
     """Verify that validate_schema logs dataset shape, missingness per column, and duplicate row count."""
     df = pd.read_csv(valid_labeled_csv_path)

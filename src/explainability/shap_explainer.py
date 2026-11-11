@@ -412,10 +412,13 @@ def generate_shap_summary_plot(
     plt.figure(figsize=(10, 6))
     plt.title("Global SHAP Feature Importance (DecisionTreeClassifier)", fontsize=13, pad=15)
 
+    # summary_plot expects one samples-by-features matrix per class for
+    # multiclass bars. A single 3-D array is interpreted as interaction values.
     shap.summary_plot(
-        shap_exp,
+        list(np.moveaxis(shap_exp.values, -1, 0)),
         preprocessed_df,
         class_names=class_names,
+        plot_type="bar",
         show=False,
     )
 

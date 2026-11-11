@@ -92,6 +92,7 @@ def test_tc_4_1_02_leakage_and_prediction_time_availability(labeled_df):
     assert np.isclose(row_0_orig, row_0_perturbed), "Feature computation must be strictly row-independent"
 
 
+@pytest.mark.official_cpcb
 def test_tc_4_1_03_redundancy_check(labeled_df):
     """
     TC-4.1-03: Redundancy check.

@@ -48,6 +48,7 @@ def data_dict_content(repo_root: Path) -> str:
 # ---------------------------------------------------------------------------
 # TC-1.4-01: Data Dictionary Matches Actual Data
 # ---------------------------------------------------------------------------
+@pytest.mark.official_cpcb
 def test_tc_1_4_01_data_dictionary_covers_all_columns(labeled_df: pd.DataFrame, data_dict_content: str):
     """TC-1.4-01: Programmatically compare dictionary column list against df.columns."""
     actual_columns = list(labeled_df.columns)
@@ -63,6 +64,7 @@ def test_tc_1_4_01_data_dictionary_covers_all_columns(labeled_df: pd.DataFrame, 
     assert not missing_in_doc, f"Columns missing from Docs/data_dictionary.md: {missing_in_doc}"
 
 
+@pytest.mark.official_cpcb
 def test_tc_1_4_01_dtypes_match_actual_dataset(labeled_df: pd.DataFrame, data_dict_content: str):
     """TC-1.4-01: Verify that core dtypes in data dictionary correspond to actual DataFrame dtypes."""
     # Check numeric candidate features
@@ -106,6 +108,7 @@ def test_tc_1_4_02_wqi_score_excluded_from_features(config_dict: dict, data_dict
 # ---------------------------------------------------------------------------
 # TC-1.4-03: Target Column Identified Correctly
 # ---------------------------------------------------------------------------
+@pytest.mark.official_cpcb
 def test_tc_1_4_03_target_column_classes_and_distribution(labeled_df: pd.DataFrame, data_dict_content: str):
     """TC-1.4-03: Confirm wqi_class has the confirmed class values and matches M1.3 distribution."""
     expected_classes = {"Excellent", "Good", "Poor", "Very Poor", "Unsuitable"}
@@ -127,6 +130,7 @@ def test_tc_1_4_03_target_column_classes_and_distribution(labeled_df: pd.DataFra
         assert cls in data_dict_content
 
 
+@pytest.mark.official_cpcb
 def test_tc_1_4_03_binary_potability_target_consistency(labeled_df: pd.DataFrame):
     """TC-1.4-03: Verify binary Potability mapping aligns with wqi_class."""
     potable_classes = labeled_df[labeled_df["Potability"] == 1]["wqi_class"].unique()
@@ -141,6 +145,7 @@ def test_tc_1_4_03_binary_potability_target_consistency(labeled_df: pd.DataFrame
 # ---------------------------------------------------------------------------
 # TC-1.4-04: config.yaml Reflects Frozen Schema
 # ---------------------------------------------------------------------------
+@pytest.mark.official_cpcb
 def test_tc_1_4_04_config_yaml_frozen_schema(config_dict: dict, labeled_df: pd.DataFrame):
     """TC-1.4-04: Load config.yaml and check target_column and feature_columns are non-empty and match dictionary."""
     # Target column

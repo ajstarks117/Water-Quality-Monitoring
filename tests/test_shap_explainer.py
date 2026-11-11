@@ -192,6 +192,7 @@ def test_tc_7_1_02_feature_engineering_consistency(frozen_model, raw_test_sample
 # ===========================================================================
 # TC-7.1-03: Global importance is directionally sane
 # ===========================================================================
+@pytest.mark.official_cpcb
 def test_tc_7_1_03_directionally_sane_importance(frozen_model):
     """
     TC-7.1-03: Compare SHAP top-3 features against the visually separating parameters from EDA.
