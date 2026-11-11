@@ -1,3 +1,6 @@
+import globalShap from "../../reports/figures/shap_summary.png";
+import Overview from "./Overview";
+import Evaluation from "./Evaluation";
 import DecisionView from "./DecisionView";
 import { HistoricalTrends } from "./HistoricalTrends";
 import Assessment from "./Assessment";
@@ -32,15 +35,9 @@ const pages = [
   ],
   [
     "prediction",
-    "Prediction",
+    "Prediction & Explainability",
     ScanLine,
     "Explore the predicted class and its probability distribution.",
-  ],
-  [
-    "explanation",
-    "Explainability",
-    ChartBar,
-    "Inspect the contributions to the predicted class probability.",
   ],
   [
     "parameters",
@@ -55,13 +52,18 @@ const pages = [
     "Review follow-up actions for the selected sample.",
   ],
   [
+    "evaluation",
+    "Model Evaluation",
+    ChartBar,
+    "Compare candidate models on the project evaluation split.",
+  ],
+  [
     "trends",
     "Historical Trends",
     History,
     "Compare historical measurements and WQI classes by month, state, and station.",
   ],
 ];
-const colors = ["#5aab9b", "#0e7974", "#e3b053", "#cf803b", "#5366a4"];
 function Card({ title, note, children, wide = false }) {
   return (
     <section className={wide ? "card wide" : "card"}>
@@ -69,99 +71,6 @@ function Card({ title, note, children, wide = false }) {
       {note && <small>{note}</small>}
       {children}
     </section>
-  );
-}
-function Overview({ d }) {
-  const counts = Object.entries(d.distribution);
-  const total = counts.reduce((sum, [, n]) => sum + n, 0);
-  let angle = 0;
-  const stops = counts.map(([, n], i) => {
-    const start = angle;
-    angle += (n / total) * 360;
-    return colors[i] + " " + start + "deg " + angle + "deg";
-  });
-  const mapped = d.stations.filter(
-    (s) => Number.isFinite(s.Latitude) && Number.isFinite(s.Longitude),
-  );
-  const xs = mapped.map((s) => s.Longitude),
-    ys = mapped.map((s) => s.Latitude);
-  const west = Math.min(...xs),
-    south = Math.min(...ys);
-  const width = Math.max(...xs) - west || 1,
-    height = Math.max(...ys) - south || 1;
-  return (
-    <>
-      <div className="metrics">
-        {[
-          ["Total valid observations", total],
-          ["Unique stations", d.stations.length],
-          ["Parameters analyzed", d.features.length],
-          ["Supported target classes", counts.length],
-        ].map(([label, n]) => (
-          <section className="card" key={label}>
-            <small>{label}</small>
-            <strong>{n}</strong>
-          </section>
-        ))}
-      </div>
-      <div className="grid">
-        <Card
-          wide
-          title="Water-station distribution"
-          note="Station locations by longitude and latitude"
-        >
-          <div className="map">
-            {mapped.map((s) => (
-              <span
-                className="dot"
-                key={s.State + s.Station}
-                title={s.Station + ", " + s.State}
-                style={{
-                  left: 4 + (90 * (s.Longitude - west)) / width + "%",
-                  top: 94 - (90 * (s.Latitude - south)) / height + "%",
-                }}
-              />
-            ))}
-          </div>
-        </Card>
-        <Card title="Class distribution" note="Labeled CPCB observations">
-          <div
-            className="ring"
-            style={{ background: "conic-gradient(" + stops.join(",") + ")" }}
-          >
-            <b>
-              {total}
-              <small>records</small>
-            </b>
-          </div>
-          {counts.map(([c, n], i) => (
-            <div className="legend" key={c}>
-              <i style={{ background: colors[i] }} />
-              {c}
-              <b>{n}</b>
-            </div>
-          ))}
-        </Card>
-      </div>
-      <div className="bottom">
-        <Card title="Sampling coverage">
-          {[...new Set(d.stations.map((s) => s.State))].map((state) => (
-            <p key={state}>
-              {state} · {d.stations.filter((s) => s.State === state).length}{" "}
-              stations
-            </p>
-          ))}
-        </Card>
-        <Card title="Data source">
-          <p>CPCB surface-water monitoring records</p>
-          <a href="#trends">Explore historical measurements →</a>
-        </Card>
-        <Card title="Model readiness">
-          <p>Frozen decision tree</p>
-          <a href="#prediction">View prediction →</a>
-        </Card>
-      </div>
-    </>
   );
 }
 function Bars({ rows, max = 1 }) {
@@ -186,7 +95,9 @@ function Bars({ rows, max = 1 }) {
     </div>
   );
 }
-function PredictionView({ result, explanationFirst }) {
+function PredictionView({ result }) {
+  const [scope, setScope] = useState("local");
+  const [selected, setSelected] = useState(null);
   if (!result)
     return (
       <Card title="No assessment yet">
@@ -198,33 +109,66 @@ function PredictionView({ result, explanationFirst }) {
       style: "percent",
       maximumFractionDigits: 2,
     }).format(value);
+  const active =
+    result.contributions.find((f) => f.feature === selected) ||
+    result.contributions[0];
   const shap = (
     <Card
-      title="Local SHAP contributions"
+      title={
+        scope === "local"
+          ? "Local SHAP contributions"
+          : "Global SHAP contributions"
+      }
       note={`Baseline model probability: ${percent(result.base_value)}`}
     >
-      <div className="bars">
-        {result.contributions.map(({ feature, contribution }) => (
-          <div key={feature}>
-            <div className="row">
-              <span>{feature}</span>
-              <b>
-                {contribution > 0 ? "+" : ""}
-                {contribution.toFixed(4)}
-              </b>
-            </div>
-            <div className="signed-track">
-              <i
-                style={{
-                  width: Math.abs(contribution) * 50 + "%",
-                  [contribution < 0 ? "right" : "left"]: "50%",
-                  background: contribution < 0 ? "#087d75" : "#3469dd",
-                }}
-              />
-            </div>
-          </div>
+      <div className="chart-tabs">
+        {["local", "global"].map((id) => (
+          <button
+            type="button"
+            key={id}
+            aria-pressed={scope === id}
+            onClick={() => setScope(id)}
+          >
+            {id === "local" ? "Individual explanation" : "Global explanation"}
+          </button>
         ))}
       </div>
+      {scope === "global" ? (
+        <img
+          className="evaluation-matrix"
+          src={globalShap}
+          alt="Global SHAP feature importance from the saved Phase 7 analysis"
+        />
+      ) : (
+        <div className="bars">
+          {result.contributions.map(({ feature, contribution }) => (
+            <button
+              type="button"
+              className="feature-bar"
+              key={feature}
+              aria-pressed={active.feature === feature}
+              onClick={() => setSelected(feature)}
+            >
+              <div className="row">
+                <span>{feature}</span>
+                <b>
+                  {contribution > 0 ? "+" : ""}
+                  {contribution.toFixed(4)}
+                </b>
+              </div>
+              <div className="signed-track">
+                <i
+                  style={{
+                    width: Math.abs(contribution) * 50 + "%",
+                    [contribution < 0 ? "right" : "left"]: "50%",
+                    background: contribution < 0 ? "#087d75" : "#3469dd",
+                  }}
+                />
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
       <small>{result.caveat}</small>
     </Card>
   );
@@ -241,7 +185,7 @@ function PredictionView({ result, explanationFirst }) {
   );
   return (
     <>
-      <div className="grid">
+      <div className="grid prediction-summary">
         <Card title="Predicted WQI class">
           <strong>{result.predicted_class}</strong>
           <p>Model probability: {percent(result.model_probability)}</p>
@@ -253,26 +197,54 @@ function PredictionView({ result, explanationFirst }) {
           )}
         </Card>
         <Card title="Assessment measurements">
-          {Object.entries(result.measurements).map(([name, v]) => (
-            <div className="row" key={name}>
-              <span>{name}</span>
-              <b>{v}</b>
-            </div>
-          ))}
+          <div className="measurement-tiles">
+            {Object.entries(result.measurements).map(([name, v]) => (
+              <div key={name}>
+                <small>{name}</small>
+                <b>{v}</b>
+              </div>
+            ))}
+          </div>
         </Card>
       </div>
-      <div className="grid">
-        {explanationFirst ? shap : probabilities}
-        {explanationFirst ? probabilities : shap}
+      <div className="grid prediction-detail">
+        {shap}
+        <div className="card-stack">
+          {probabilities}
+          <Card title="Feature interpretation">
+            <b>{active.feature}</b>
+            <p>
+              Observed value ·{" "}
+              {active.feature_value.toLocaleString(undefined, {
+                maximumFractionDigits: 4,
+              })}
+            </p>
+            <p>
+              {Math.abs(active.contribution * 100).toFixed(2)} percentage points{" "}
+              {active.contribution < 0
+                ? "below"
+                : active.contribution > 0
+                  ? "above"
+                  : "from"}{" "}
+              baseline attributable to this feature for {result.predicted_class}
+              .
+            </p>
+          </Card>
+        </div>
       </div>
-      <a href="#input">Edit measurements →</a>
+      <div className="card result-actions">
+        <a href="#input">Edit measurements →</a>
+        <a href="#decisions">View recommendations →</a>
+      </div>
     </>
   );
 }
 function currentPage() {
-  return pages.find(([id]) => "#" + id === location.hash) || pages[0];
+  const hash = location.hash === "#explanation" ? "#prediction" : location.hash;
+  return pages.find(([id]) => "#" + id === hash) || pages[0];
 }
 function App() {
+  const [state, setState] = useState("");
   const [page, setPage] = useState(currentPage);
   const [prediction, setPrediction] = useState(null);
   const liveResult = [
@@ -327,6 +299,14 @@ function App() {
           <b>Surface-water monitoring</b>
           <small>Historical water quality in India</small>
         </div>
+        <details className="dataset-info">
+          <summary>Dataset information</summary>
+          <p>
+            CPCB labeled surface-water observations from Maharashtra and Uttar
+            Pradesh.
+          </p>
+          <a href="#trends">Explore sampling history →</a>
+        </details>
       </aside>
       <main>
         <header>
@@ -336,23 +316,49 @@ function App() {
               ? "Manual entry"
               : liveResult
                 ? "Live model"
-                : "Historical records"}
+                : page[0] === "evaluation"
+                  ? "Evaluation report"
+                  : data
+                    ? "Dataset connected"
+                    : error
+                      ? "Dataset unavailable"
+                      : "Loading dataset"}
           </span>
+          {page[0] === "overview" && data && (
+            <label className="region-picker">
+              State{" "}
+              <select
+                aria-label="State"
+                value={state}
+                onChange={(e) => setState(e.target.value)}
+              >
+                <option value="">All states</option>
+                {[...new Set(data.stations.map((s) => s.State))].map((s) => (
+                  <option key={s}>{s}</option>
+                ))}
+              </select>
+            </label>
+          )}
         </header>
         <article>
           <h1>{page[1]}</h1>
           <p className="intro">{page[3]}</p>
           <div hidden={page[0] !== "input"}>
-            <Assessment onPrediction={setPrediction} />
+            <Assessment onPrediction={setPrediction} history={data} />
           </div>
           {page[0] === "input" ? null : prediction &&
             ["parameters", "decisions"].includes(page[0]) ? (
-            <DecisionView page={page[0]} result={prediction} Card={Card} />
-          ) : liveResult ? (
-            <PredictionView
+            <DecisionView
+              page={page[0]}
               result={prediction}
-              explanationFirst={page[0] === "explanation"}
+              history={data}
+              historyError={error}
+              Card={Card}
             />
+          ) : liveResult ? (
+            <PredictionView result={prediction} />
+          ) : page[0] === "evaluation" ? (
+            <Evaluation Card={Card} />
           ) : error ? (
             <section role="alert">
               Dashboard data is unavailable.{" "}
@@ -361,7 +367,7 @@ function App() {
           ) : !data ? (
             <p role="status">Loading sample data…</p>
           ) : page[0] === "overview" ? (
-            <Overview d={data} />
+            <Overview data={data} state={state} Card={Card} />
           ) : (
             <HistoricalTrends data={data} Card={Card} Bars={Bars} />
           )}

@@ -2,8 +2,8 @@ import { test, expect } from "@playwright/test";
 const sections = [
   ["Overview", "Water-station distribution"],
   ["Water Quality Assessment", "Measurement inputs"],
-  ["Prediction", "No assessment yet"],
-  ["Explainability", "No assessment yet"],
+  ["Prediction & Explainability", "No assessment yet"],
+  ["Model Evaluation", "Candidate models"],
   ["Parameter Analysis", "No assessment yet"],
   ["Decision Support", "No assessment yet"],
   ["Historical Trends", "Measurements over time"],
@@ -118,12 +118,22 @@ for (const uncertain of [false, true]) {
         console.log("Live submission to rendered result (ms)", elapsed);
         expect(elapsed).toBeLessThan(3000);
       }
+      const bar = page.locator(".feature-bar").last();
+      await bar.click();
+      await expect(bar).toHaveAttribute("aria-pressed", "true");
+      await page.getByRole("button", { name: "Global explanation" }).click();
+      await expect(
+        page.getByRole("img", { name: /Global SHAP/ }),
+      ).toBeVisible();
+      await page
+        .getByRole("button", { name: "Individual explanation" })
+        .click();
       await page.getByRole("link", { name: "Edit measurements" }).click();
       await expect(fields.first()).toHaveValue("7.2");
       await fields.first().fill("7.4");
       await page
         .getByRole("navigation")
-        .getByRole("link", { name: "Prediction", exact: true })
+        .getByRole("link", { name: "Prediction & Explainability", exact: true })
         .click();
       await expect(
         page.getByRole("heading", { name: "No assessment yet" }),
@@ -161,12 +171,17 @@ test("walk four assessments through all seven sections", async ({ page }) => {
       await expect(page.locator("article strong").first()).toHaveText(
         expectedClass,
       );
-    await nav("Explainability");
+    await nav("Prediction & Explainability");
     await expect(
       page.getByRole("heading", { name: "Local SHAP contributions" }),
     ).toBeVisible();
     await nav("Parameter Analysis");
     await expect(page.locator("tbody tr")).toHaveCount(5);
+    await page.getByLabel("Distribution state").selectOption("Uttar Pradesh");
+    await expect(page.locator(".histogram i")).toHaveCount(7);
+    await expect(
+      page.getByRole("columnheader", { name: "Interpretation", exact: true }),
+    ).toBeVisible();
     await nav("Decision Support");
     for (const name of [
       "Assessment context",
@@ -197,5 +212,52 @@ test("walk four assessments through all seven sections", async ({ page }) => {
     ).toBeVisible();
     await expect(page.getByText(/^[1-9]\d* dated observations$/)).toBeVisible();
   }
+  const through = page.getByLabel("Sampling through");
+  const last = await through.getAttribute("max");
+  await through.fill(last);
+  await page.getByRole("button", { name: "Reset filters" }).click();
+  await expect(through).toHaveValue("");
+  await expect(page.getByLabel("State", { exact: true })).toHaveValue("");
+  await page.locator(".period summary").first().click();
+  await expect(page.locator(".period[open] .row")).toHaveCount(5);
   expect(errors).toEqual([]);
+});
+test("overview filters, station selection and evaluation use real data", async ({
+  page,
+  request,
+}) => {
+  const data = await (await request.get("/api/dashboard")).json();
+  await page.goto("/");
+  const state = "Uttar Pradesh";
+  await page.getByLabel("State", { exact: true }).selectOption(state);
+  const records = data.records.filter((r) => r.state === state);
+  await expect(page.locator(".metrics strong").first()).toHaveText(
+    String(records.length),
+  );
+  const stations = data.stations.filter((s) => s.State === state);
+  await page
+    .getByRole("combobox", { name: "Station", exact: true })
+    .selectOption("1");
+  await expect(page.locator(".bottom section").first()).toContainText(
+    stations[1].Station,
+  );
+  const firstMarker = page.locator(".station-map .leaflet-interactive").first();
+  await firstMarker.dispatchEvent("click");
+  await expect(
+    page
+      .locator(".station-map .leaflet-popup-content")
+      .filter({ hasText: stations[0].Station }),
+  ).toContainText(stations[0].Station);
+  await expect(page.locator(".bottom section").first()).toContainText(
+    stations[0].Station,
+  );
+  await page
+    .getByRole("link", { name: "Model Evaluation", exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "Candidate models" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("cell", { name: "0.9067", exact: true }),
+  ).toBeVisible();
 });
