@@ -211,6 +211,7 @@ class TestDynamicWeightAndQuarantine:
 # ===========================================================================
 # TC-1.3-04: End-to-End Pipeline & Distribution Audit
 # ===========================================================================
+@pytest.mark.official_cpcb
 class TestPipelineAndDistribution:
     """Validate execution on the actual joined dataset and verify report generation."""
 

@@ -182,6 +182,7 @@ def test_tc_3_2_02_eda_summary_report_readability():
     assert "eda_summary.md" in readme_content, "reports/eda_summary.md must be linked in README.md"
 
 
+@pytest.mark.official_cpcb
 def test_summary_statistics_validity(labeled_df):
     """Verify that summary statistics computation covers all candidate features and ranges."""
     stats = compute_summary_statistics(labeled_df)

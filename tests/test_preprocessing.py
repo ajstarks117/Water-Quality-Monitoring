@@ -45,6 +45,7 @@ def candidate_features() -> list:
 # ---------------------------------------------------------------------------
 # TC-2.1-01: Missing Value Strategy Applied Correctly
 # ---------------------------------------------------------------------------
+@pytest.mark.official_cpcb
 def test_tc_2_1_01_missing_value_strategy_applied_correctly(labeled_df: pd.DataFrame, candidate_features: list):
     """TC-2.1-01: Verify zero missing values in active features and expected dropped columns."""
     df_clean, state = handle_missing_values(labeled_df, strategy_config={"max_missing_col_pct": 40.0})
@@ -210,6 +211,7 @@ def test_tc_2_2_01_physically_impossible_values_removed(candidate_features: list
 # ---------------------------------------------------------------------------
 # TC-2.2-02: Genuine Extreme Readings Retained
 # ---------------------------------------------------------------------------
+@pytest.mark.official_cpcb
 def test_tc_2_2_02_genuine_extreme_values_retained(labeled_df: pd.DataFrame):
     """TC-2.2-02: High-but-plausible BOD and extreme Fecal Coliform values are retained as genuine signals."""
     df_clean, report = handle_outliers(labeled_df, remove_invalid=True)
