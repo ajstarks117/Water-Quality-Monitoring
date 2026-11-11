@@ -1,3 +1,4 @@
+import globalShap from "../../reports/figures/shap_summary.png";
 import Overview from "./Overview";
 import Evaluation from "./Evaluation";
 import DecisionView from "./DecisionView";
@@ -94,7 +95,9 @@ function Bars({ rows, max = 1 }) {
     </div>
   );
 }
-function PredictionView({ result, explanationFirst }) {
+function PredictionView({ result }) {
+  const [scope, setScope] = useState("local");
+  const [selected, setSelected] = useState(null);
   if (!result)
     return (
       <Card title="No assessment yet">
@@ -106,33 +109,66 @@ function PredictionView({ result, explanationFirst }) {
       style: "percent",
       maximumFractionDigits: 2,
     }).format(value);
+  const active =
+    result.contributions.find((f) => f.feature === selected) ||
+    result.contributions[0];
   const shap = (
     <Card
-      title="Local SHAP contributions"
+      title={
+        scope === "local"
+          ? "Local SHAP contributions"
+          : "Global SHAP contributions"
+      }
       note={`Baseline model probability: ${percent(result.base_value)}`}
     >
-      <div className="bars">
-        {result.contributions.map(({ feature, contribution }) => (
-          <div key={feature}>
-            <div className="row">
-              <span>{feature}</span>
-              <b>
-                {contribution > 0 ? "+" : ""}
-                {contribution.toFixed(4)}
-              </b>
-            </div>
-            <div className="signed-track">
-              <i
-                style={{
-                  width: Math.abs(contribution) * 50 + "%",
-                  [contribution < 0 ? "right" : "left"]: "50%",
-                  background: contribution < 0 ? "#087d75" : "#3469dd",
-                }}
-              />
-            </div>
-          </div>
+      <div className="chart-tabs">
+        {["local", "global"].map((id) => (
+          <button
+            type="button"
+            key={id}
+            aria-pressed={scope === id}
+            onClick={() => setScope(id)}
+          >
+            {id === "local" ? "Individual explanation" : "Global explanation"}
+          </button>
         ))}
       </div>
+      {scope === "global" ? (
+        <img
+          className="evaluation-matrix"
+          src={globalShap}
+          alt="Global SHAP feature importance from the saved Phase 7 analysis"
+        />
+      ) : (
+        <div className="bars">
+          {result.contributions.map(({ feature, contribution }) => (
+            <button
+              type="button"
+              className="feature-bar"
+              key={feature}
+              aria-pressed={active.feature === feature}
+              onClick={() => setSelected(feature)}
+            >
+              <div className="row">
+                <span>{feature}</span>
+                <b>
+                  {contribution > 0 ? "+" : ""}
+                  {contribution.toFixed(4)}
+                </b>
+              </div>
+              <div className="signed-track">
+                <i
+                  style={{
+                    width: Math.abs(contribution) * 50 + "%",
+                    [contribution < 0 ? "right" : "left"]: "50%",
+                    background: contribution < 0 ? "#087d75" : "#3469dd",
+                  }}
+                />
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
       <small>{result.caveat}</small>
     </Card>
   );
@@ -149,7 +185,7 @@ function PredictionView({ result, explanationFirst }) {
   );
   return (
     <>
-      <div className="grid">
+      <div className="grid prediction-summary">
         <Card title="Predicted WQI class">
           <strong>{result.predicted_class}</strong>
           <p>Model probability: {percent(result.model_probability)}</p>
@@ -161,19 +197,45 @@ function PredictionView({ result, explanationFirst }) {
           )}
         </Card>
         <Card title="Assessment measurements">
-          {Object.entries(result.measurements).map(([name, v]) => (
-            <div className="row" key={name}>
-              <span>{name}</span>
-              <b>{v}</b>
-            </div>
-          ))}
+          <div className="measurement-tiles">
+            {Object.entries(result.measurements).map(([name, v]) => (
+              <div key={name}>
+                <small>{name}</small>
+                <b>{v}</b>
+              </div>
+            ))}
+          </div>
         </Card>
       </div>
-      <div className="grid">
-        {explanationFirst ? shap : probabilities}
-        {explanationFirst ? probabilities : shap}
+      <div className="grid prediction-detail">
+        {shap}
+        <div className="card-stack">
+          {probabilities}
+          <Card title="Feature interpretation">
+            <b>{active.feature}</b>
+            <p>
+              Observed value ·{" "}
+              {active.feature_value.toLocaleString(undefined, {
+                maximumFractionDigits: 4,
+              })}
+            </p>
+            <p>
+              {Math.abs(active.contribution * 100).toFixed(2)} percentage points{" "}
+              {active.contribution < 0
+                ? "below"
+                : active.contribution > 0
+                  ? "above"
+                  : "from"}{" "}
+              baseline attributable to this feature for {result.predicted_class}
+              .
+            </p>
+          </Card>
+        </div>
       </div>
-      <a href="#input">Edit measurements →</a>
+      <div className="card result-actions">
+        <a href="#input">Edit measurements →</a>
+        <a href="#decisions">View recommendations →</a>
+      </div>
     </>
   );
 }
@@ -288,10 +350,7 @@ function App() {
             ["parameters", "decisions"].includes(page[0]) ? (
             <DecisionView page={page[0]} result={prediction} Card={Card} />
           ) : liveResult ? (
-            <PredictionView
-              result={prediction}
-              explanationFirst={page[0] === "explanation"}
-            />
+            <PredictionView result={prediction} />
           ) : page[0] === "evaluation" ? (
             <Evaluation Card={Card} />
           ) : error ? (

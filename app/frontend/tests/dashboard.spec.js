@@ -118,6 +118,16 @@ for (const uncertain of [false, true]) {
         console.log("Live submission to rendered result (ms)", elapsed);
         expect(elapsed).toBeLessThan(3000);
       }
+      const bar = page.locator(".feature-bar").last();
+      await bar.click();
+      await expect(bar).toHaveAttribute("aria-pressed", "true");
+      await page.getByRole("button", { name: "Global explanation" }).click();
+      await expect(
+        page.getByRole("img", { name: /Global SHAP/ }),
+      ).toBeVisible();
+      await page
+        .getByRole("button", { name: "Individual explanation" })
+        .click();
       await page.getByRole("link", { name: "Edit measurements" }).click();
       await expect(fields.first()).toHaveValue("7.2");
       await fields.first().fill("7.4");

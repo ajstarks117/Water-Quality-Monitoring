@@ -397,3 +397,9 @@ mark {
 .card-stack {display:grid;gap:1rem;align-content:start;min-width:0}
 @media(min-width:761px){.grid.assessment{grid-template-columns:minmax(0,1.35fr) minmax(0,1fr)}}
 .assessment .form-actions button[value=predict]{background:#255edb;color:white}
+.chart-tabs,.result-actions,.measurement-tiles {display:flex;gap:.6rem;flex-wrap:wrap}
+.chart-tabs button,.feature-bar{cursor:pointer;border:1px solid #dbe5ea;border-radius:7px;background:white;color:inherit;padding:.5rem;font:inherit}
+.chart-tabs button[aria-pressed=true]{background:#255edb;color:white}.feature-bar{text-align:left;width:100%}.feature-bar[aria-pressed=true]{border-color:#9abceb;background:#f6faff}
+.measurement-tiles>div{background:#f3f7f7;padding:.75rem;border-radius:.5rem;flex:1 1 100px}
+.result-actions{align-items:center;justify-content:space-between}.chart-tabs{margin-top:1rem}
+@media(min-width:761px){.grid.prediction-summary{grid-template-columns:1fr 2fr}.grid.prediction-detail{grid-template-columns:1.6fr 1fr}}
