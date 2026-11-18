@@ -41,6 +41,7 @@ for (const [scenario, values, message] of [
 
 test("one severe BOD reading remains visible in decision support", async ({ page }) => {
   const result = await predict(page, [7, 7, 90, 100]);
+  await expect(page.getByText("Model and parameter assessments differ.")).toHaveCount(0);
   expect(result.parameters.filter(p => p.abnormal).map(p => p.name)).toEqual([names[2]]);
   await page.getByRole("navigation").getByRole("link", { name: "Decision Support" }).click();
   await expect(page.getByRole("heading", { name: names[2] })).toBeVisible();
@@ -61,4 +62,18 @@ test("accepted pH beyond training support is flagged", async ({ page }) => {
   await predict(page, [10, 7, 2, 100]);
   await expect(page.getByRole("status").filter({ hasText: "outside the observed training range" }))
     .toHaveText("Potential of Hydrogen (pH) is outside the observed training range (5.45–9.2).");
+});
+
+test("Krishna sample preserves the ML class and the independent rule assessment", async ({ page }) => {
+  const result = await predict(page, [7.8, 6.3, 2.6, 4]);
+  expect(result.predicted_class).toBe("Very Poor");
+  expect(result.class_probabilities["Very Poor"]).toBe(1);
+  expect(result.parameters.every(p => p.abnormal === false)).toBe(true);
+  expect(result.base_value + result.contributions.reduce((sum, f) => sum + f.contribution, 0)).toBeCloseTo(1, 6);
+  await expect(page.getByText("Very Poor", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText(/Even 100% does not guarantee/)).toBeVisible();
+  const notice = page.getByText(/All four measurements are within their configured limits/);
+  await expect(notice).toBeVisible();
+  await page.getByRole("navigation").getByRole("link", { name: "Decision Support" }).click();
+  await expect(notice).toBeVisible();
 });

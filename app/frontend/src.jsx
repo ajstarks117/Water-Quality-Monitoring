@@ -1,5 +1,6 @@
 import globalShap from "../../reports/figures/shap_summary.png";
 import Overview from "./Overview";
+import AssessmentComparison from "./AssessmentComparison";
 import Evaluation from "./Evaluation";
 import DecisionView from "./DecisionView";
 import { HistoricalTrends } from "./HistoricalTrends";
@@ -189,6 +190,8 @@ function PredictionView({ result }) {
         <Card title="Predicted WQI class">
           <strong>{result.predicted_class}</strong>
           <p>Model probability: {percent(result.model_probability)}</p>
+          <small>This percentage describes the class share in the model’s decision-tree leaf. Even 100% does not guarantee a correct prediction.</small>
+          <AssessmentComparison result={result} />
           {result.screening_warnings?.map(message => <p key={message} role="status">{message}</p>)}
           {result.uncertain && (
             <p role="status">

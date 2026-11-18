@@ -198,7 +198,7 @@ test("walk four assessments through all seven sections", async ({ page }) => {
     console.log(
       "Walkthrough",
       values.join(", "),
-      await page.locator(".decision-grid strong").innerText(),
+      await page.locator(".decision-grid .card").first().locator(":scope > strong").innerText(),
       priority,
       await page.locator(".decision-grid .card").nth(2).innerText(),
     );
