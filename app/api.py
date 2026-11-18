@@ -6,21 +6,25 @@ from urllib.parse import urlsplit
 from app.dashboard_prediction import predict_assessment
 from app.dashboard_input import frozen_model
 from app.dashboard_history import historical_dashboard
-from src.data.load_data import DataIngestionError
 from app.dashboard_input import FIELDS, InputError, preprocess_assessment
 
 
 class DashboardHandler(BaseHTTPRequestHandler):
+    def log_request(self, code="-", size="-"):
+        # Request URLs may contain user-supplied query strings.
+        self.log_message("HTTP response %s", code)
+
     def do_GET(self):
         if urlsplit(self.path).path == "/api/assessment/schema":
             self.send_json(200, FIELDS)
         elif urlsplit(self.path).path == "/api/dashboard":
             try:
                 history = historical_dashboard()
-            except (OSError, DataIngestionError):
+                self.send_json(200, history)
+            except Exception:
+                self.log_error("Historical observations unavailable")
                 self.send_json(503, {"error": "Historical observations are unavailable."})
                 return
-            self.send_json(200, history)
         else:
             self.send_error(404)
 
@@ -41,6 +45,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return
         try:
             result = handler(values)
+            self.send_json(200, result)
         except InputError as exc:
             self.send_json(422, {"error": str(exc)})
             return
@@ -48,7 +53,6 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self.log_error("Assessment processing failed")
             self.send_json(500, {"error": "Assessment processing is unavailable. Please try again."})
             return
-        self.send_json(200, result)
 
     def send_json(self, status, payload):
         body = json.dumps(payload, allow_nan=False).encode()
