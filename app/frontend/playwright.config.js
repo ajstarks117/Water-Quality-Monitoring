@@ -7,6 +7,11 @@ export default defineConfig({
   },
   webServer: [
     {
+      command: "python -m tests.dashboard_failure_server",
+      cwd: "../..",
+      url: "http://127.0.0.1:18742/api/assessment/schema",
+    },
+    {
       command: "python -m app.api",
       cwd: "../..",
       url: "http://127.0.0.1:18741/api/dashboard",
