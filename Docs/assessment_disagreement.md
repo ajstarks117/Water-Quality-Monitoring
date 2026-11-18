@@ -35,3 +35,9 @@ The nearest training and holdout observations both had BOD 3.2 mg/L. The nearby 
 ## Proposed follow-up requiring approval
 
 Reconcile the written minimum-parameter policy with the executable target specification and distinguish project class names from regulatory designations in the standards documentation. If reproducing MPCB becomes a project requirement, first validate a separate versioned calculator using dated station records with known DO saturation, units and class definitions. Evaluate any proposed model against that explicitly chosen target on independent stations and dates, including calibration. This audit changes only dashboard interpretation and its tests.
+
+## Verification record
+
+The production build passed. All 13 Playwright browser tests passed in 15.4 seconds, including submission of this sample through the actual API, class and probability checks, normal parameter statuses, SHAP additivity and visible disagreement notices in Prediction and Decision Support. The abnormal-BOD case checks that the notice is absent when a measurement exceeds its limit.
+
+The full local Python suite passed all 222 tests in 45.73 seconds, with 1,359 warnings including the existing scikit-learn artifact/runtime version warning. On 18 November 2026, the required Dashboard pytest check and GitGuardian check were confirmed successful for commit 32ac819. [Audit PR and checks](https://github.com/ajstarks117/Water-Quality-Monitoring/pull/6)
